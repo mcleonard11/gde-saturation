@@ -12,10 +12,10 @@ T_ref = T_0+25; % [K] reference temperature
 % OPERATING CONDITIONS
 P = 1.5e5; % [Pa] total pressure in gas channel
 RH = 0.90; % [-] relative humidity in gas channel
-s_C = 0.12; % [-] liquid water saturation at GDL/GC interface
-T = T_0+25; % [K] temperature of gas channel
+s_C = 0.01; % [-] liquid water saturation at GDL/GC interface
+T = T_0+80; % [K] temperature of gas channel
 
-n_w = [0.0025:0.0025:0.01]'; % water injection flux (proxy for water generation)
+N_w = 1e3*[0.0025:0.0025:0.01]'; % water injection flux (proxy for water generation)
 
 % MATERIAL PARAMETERS
 L = [100]*1e-6; % [m] gas diffusion layer thicccness
@@ -54,11 +54,11 @@ sol = bvpinit(x, @yinit);
 options = bvpset('Vectorized', 'on', 'NMax', 1e3, 'RelTol', 1e-4, 'AbsTol', 1e-6);
 
 % PARAMETER SWEEP
-SOL = cell(size(n_w));
-Np = numel(n_w); % number of parameters in the sweep
+SOL = cell(size(N_w));
+Np = numel(N_w); % number of parameters in the sweep
 Neq = size(sol.y,1)/2; % number of 2nd-order differential equations
 for k = 1:Np
-    sol = bvp4c(@odefun, @(ya,yb) bcfun(ya, yb, n_w(k)), sol, options);
+    sol = bvp4c(@odefun, @(ya,yb) bcfun(ya, yb, N_w(k)), sol, options);
     SOL{k} = sol;
 end
 % POSTPROCESSING
@@ -98,7 +98,7 @@ for m = 1:2
         hold on
         us = unit_scale(m,n);
         for k = 1:Np
-            plot(SOL{k}.x*1e6, SOL{k}.y(2*(n-1)+m,:)*us, 'Color', c(k,:), 'DisplayName', [num2str(n_w(k)) ' blah'])
+            plot(SOL{k}.x*1e6, SOL{k}.y(2*(n-1)+m,:)*us, 'Color', c(k,:), 'DisplayName', [num2str(N_w(k)) ' blah'])
         end
         xlim([Lsum(find(domains(n,:),1,'first')) Lsum(find(domains(n,:),1,'last')+1)]*1e6)
         ylim(ylim)
@@ -109,7 +109,7 @@ for m = 1:2
             set(get(get(l, 'Annotation'), 'LegendInformation'), 'IconDisplayStyle', 'off')
         end
     end
-    legend(cellstr(num2str(n_w)),'Location','best');
+    legend(cellstr(num2str(N_w)),'Location','best');
 end
 
 function dydx = odefun(x, y, subdomain)
@@ -127,7 +127,7 @@ dx_w = z; dj_x_w = z;
         C = P./(R*T); % gas phase density
         x_sat = P_sat(T)./P; % saturation water vapor mole fraction
         S_ec = gamma_ec(x_w,x_sat,s,T).*C.*(x_w-x_sat); % evaporation/condensation reaction rate
-        ds = -j_s./(rho_w*D_s(kappa_GDL,s,T)); % liquid water flux: j_s = -rho_w*D_s*grad(s) 
+        ds = -j_s./((rho_w/M_w)*D_s(kappa_GDL,s,T)); % liquid water flux: j_s = -rho_w*D_s*grad(s) 
         dx_w = -j_x_w./(C.*D_H2O(eps_p_GDL,tau_GDL,s,T)); % water vapor flux: j_H2O_v = -rho_g*D_H2O*grad(x_H2O)
         dj_s = S_ec; % conservation of liquid water: div(j_s) = S_s
         dj_x_w = -S_ec; % conservation of water vapor: div(j_H2O_v) = S_H2O
