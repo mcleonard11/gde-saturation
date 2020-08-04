@@ -14,7 +14,8 @@ P = 1.5e5; % [Pa] total pressure in gas channel
 RH = 0.90; % [-] relative humidity in gas channel
 s_C = 0.01; % [-] liquid water saturation at GDL/GC interface
 T = T_0+30; % [K] temperature of gas channel
-alpha_CO2 = 1; % [-] mole fraction of carbon dioxide in dry feed gas
+alpha_CO2 = 0.9999; % [-] mole fraction of carbon dioxide in dry feed gas
+alpha_CO = 0.0001; % [-] mole fraction of carbon monoxide in dry feed gas
 
 N_w = 1; % [mol/(m^2*s)] water injection flux through CL
 i = [0 250 500]'; % [A/m^2] current density
@@ -39,17 +40,22 @@ D_ab = @(nu_p_a,nu_p_b,M_a,M_b,P,T) ...
     1e-4*(1e-3*T.^1.75.*(1/M_a+1/M_b)^0.5)./(P/101325*(nu_p_a^0.33+nu_p_b^0.33)^2); %[m^2/s] binary diffusion coefficient
 nu_p_H2O = 12.7; % [-] diffusion volume of gaseous species
 nu_p_CO2 = 26.9; % [-] diffusion volume of gaseous species
+nu_p_CO = 18.9; % [-] diffusion volume of gaseous species
 M_H2O = 18.02; % [g/mol] molar mass of gaseous species
 M_CO2 = 44.01; % [g/mol] molar mass of gaseous species
+M_CO = 28.01; % [g/mol] molar mass of gaseous species
 D_H2O_ref = D_ab(nu_p_H2O,nu_p_CO2,M_H2O,M_CO2,P_ref,T_ref); % [m^2/s] reference diffusion coefficient, H2O in CO2
 D_CO2_ref = D_ab(nu_p_CO2,nu_p_CO2,M_CO2,M_CO2,P_ref,T_ref); % [m^2/s] reference diffusion coefficient, CO2 in CO2
+D_CO_ref = D_ab(nu_p_CO,nu_p_CO2,M_CO,M_CO2,P_ref,T_ref); % [m^2/s] reference diffusion coefficient, CO in CO2
 
 % MODEL PARAMETERIZATION
 D = @(eps_p,tau,s,P,T) eps_p/tau^2*(1-s).^3.*(T/T_ref).^1.5*(P_ref/P); % [-] scaling factor for gas diffusivities
 D_H2O = @(eps_p,tau,s,T) D_H2O_ref*D(eps_p,tau,s,P,T); % [m^2/s] H2O gas phase diffusion coefficient
 D_CO2 = @(eps_p,tau,s,T) D_CO2_ref*D(eps_p,tau,s,P,T); % [m^2/s] CO2 gas phase diffusion coefficient
+D_CO = @(eps_p,tau,s,T) D_CO_ref*D(eps_p,tau,s,P,T); % [m^2/s] CO2 gas phase diffusion coefficient
 x_H2O_C = RH*P_sat(T)/P; % [-] mole fraction of water vapor in gas channel
 x_CO2_C = alpha_CO2*(1-x_H2O_C); % [-] mole fraction of carbon dioxide in gas channel
+x_CO_C = alpha_CO*(1-x_H2O_C); % [-] mole fraction of carbon monoxide in gas channel
 
 % AUXILIARY FUNCTIONS
 iff = @(cond,a,b) cond.*a + ~cond.*b; % vectorized ternary operator
@@ -59,7 +65,6 @@ s_red = @(s) (s-s_im)/(1-s_im); % reduced liquid water saturation
 gamma_ec = @(x_H2O,x_sat,s,T) 2e6*iff(x_H2O<x_sat,5e-4*s_red(s),6e-3*(1-s_red(s))).*sqrt(R*T/(2*pi*M_w)); % [1/s] evaporation/condensation rate
 dpds = @(s) 0.00011*44.02*exp(-44.02*(s-0.496))+278.3*8.103*exp(8.103*(s-0.496)); % [Pa] derivative of capillary pressure-saturation relationship of GDL
 D_s = @(kappa,s,T) kappa*(1e-6+s_red(s).^3)./mu(T).*dpds(s); % [m^2/s] liquid water transport coefficient
-
 
 % INITIAL MESH
 Lsum = [0 cumsum(L)];
@@ -83,6 +88,7 @@ end
 Nref = 2; % number of refinements for smoother curve plotting
 domains = [1 1;
            1 1;
+           1 1
            1 1];
 shift = 1e-10;
 for k = 1:Np
@@ -104,15 +110,15 @@ end
 
 % PLOT SOLUTION
 fig_names = {'Potentials', 'Fluxes'};
-unit_scale = [1 1 1;
-              1 1 1];
-quantity = {'{\its}','{\itx}_{H_2O}','{\itx}_{CO_2}';
-            '\itj_s','{\itj}_{H2O}','{\itj}_{CO_2}'};
+unit_scale = [1 1 1 1;
+              1 1 1 1];
+quantity = {'{\its}','{\itx}_{H_2O}','{\itx}_{CO_2}','{\itx}_{CO}';
+            '\itj_s','{\itj}_{H2O}','{\itj}_{CO_2}','{\itj}_{CO}'};
 c = winter(Np);
 for m = 1:2
     figure('Name', fig_names{m})
     for n = 1:Neq
-        subplot(1,3,n)
+        subplot(2,2,n)
         box on
         hold on
         us = unit_scale(m,n);
@@ -137,12 +143,14 @@ function dydx = odefun(x, y, subdomain)
 s     = y( 1,:); j_s     = y( 2,:);
 x_w   = y( 3,:); j_x_w   = y( 4,:);
 x_CO2 = y( 5,:); j_x_CO2 = y( 6,:);
+x_CO  = y( 7,:); j_x_CO  = y( 8,:);
 
 % ZERO-INITIALIZE ALL DERIVATIVES
 z = zeros(size(x));
 ds     = z; dj_s     = z;
 dx_w   = z; dj_x_w   = z;
 dx_CO2 = z; dj_x_CO2 = z;
+dx_CO  = z; dj_x_CO  = z;
 
 % COMPUTE DERIVATIVES
 switch subdomain
@@ -153,6 +161,7 @@ switch subdomain
         ds = -j_s./((rho_w/M_w)*D_s(kappa_GDL,s,T)); % liquid water flux: j_s = -rho_w*D_s*grad(s) 
         dx_w = -j_x_w./(C.*D_H2O(eps_p_GDL,tau_GDL,s,T)); % water vapor flux: j_H2O_g = -C*D_H2O*grad(x_H2O_g)
         dx_CO2 = -j_x_CO2./(C.*D_CO2(eps_p_GDL,tau_GDL,s,T)); % carbon dioxide gas flux: j_CO2 = -C*D_CO2*grad(x_CO2)
+        dx_CO = -j_x_CO./(C.*D_CO(eps_p_GDL,tau_GDL,s,T)); % carbon monoxide gas flux: j_CO = -C*D_CO*grad(x_CO)
         dj_s = S_ec; % conservation of liquid water: div(j_s) = S_s
         dj_x_w = -S_ec; % conservation of water vapor: div(j_H2O_g) = S_H2O
     case 2 % CATALYST LAYER
@@ -161,18 +170,22 @@ switch subdomain
         S_ec = gamma_ec(x_w,x_sat,s,T).*C.*(x_w-x_sat); % evaporation/condensation reaction rate
         S_H2O = -ones(size(x_w))*a_CCL*i(k)/(2*F); % water reaction rate (Faraday's law)
         S_CO2 = -ones(size(x_CO2))*a_CCL*i(k)/(2*F); % carbon dioxide reaction rate (Faraday's law)
+        S_CO = ones(size(x_CO))*a_CCL*i(k)/(2*F); % carbon monoxide reaction rate (Faraday's law)
         ds = -j_s./((rho_w/M_w)*D_s(kappa_CL,s,T)); % liquid water flux: j_s = -rho_w*D_s*grad(s)
         dx_w = -j_x_w./(C.*D_H2O(eps_p_CL,tau_CL,s,T)); % water vapor flux: j_H2O_v = -rho_g*D_H2O*grad(x_H2O)
         dx_CO2 = -j_x_CO2./(C.*D_CO2(eps_p_CL,tau_CL,s,T)); % carbon dioxide gas flux: j_CO2 = -C*D_CO2*grad(x_CO2)
+        dx_CO = -j_x_CO./(C.*D_CO(eps_p_CL,tau_CL,s,T)); % carbon monoxide gas flux: j_CO = -C*D_CO*grad(x_CO)
         dj_s = S_ec + S_H2O; % conservation of liquid water: div(j_s) = S_s
         dj_x_w = -S_ec; % conservation of water vapor: div(j_H2O_v) = S_H2O
         dj_x_CO2 = S_CO2; % conservation of carbon dioxide gas: div(j_CO2) = S_CO2
+        dj_x_CO = S_CO; % conservation of carbon monoxide gas: div(j_CO) = S_CO
 end
 
 % ASSEMBLE DERIVATIVES
-dydx = [ds     ; dj_s   ;
-        dx_w   ; dj_x_w ;
-        dx_CO2 ; dj_x_CO2 ];
+dydx = [ds     ; dj_s    ;
+        dx_w   ; dj_x_w  ;
+        dx_CO2 ; dj_x_CO2;
+        dx_CO  ; dj_x_CO  ];
 end
 
 function y0 = yinit(x, subdomain)
@@ -180,11 +193,13 @@ function y0 = yinit(x, subdomain)
 s = s_C;
 x_w = x_H2O_C;
 x_CO2 = x_CO2_C;
+x_CO = x_CO_C;
 
 % ALL FLUXES ARE INITIALLY ZERO
-y0 = [s     ; 0; 
-      x_w   ; 0;
-      x_CO2 ; 0];
+y0 = [s     ; 0 ; 
+      x_w   ; 0 ;
+      x_CO2 ; 0 ;
+      x_CO  ; 0  ];
 end
 
 function res = bcfun(ya, yb)
@@ -208,6 +223,12 @@ res(0*Neq+5) = ya(5,1) - x_CO2_C; % gas channel carbon dioxide content
 res(0*Neq+6) = yb(6,1) - ya(6,2); % flux continuity between GDL & CL
 res(2*Neq+5) = yb(5,1) - ya(5,2); % potential continuity between GDL & CL
 res(2*Neq+6) = yb(6,2); % zero flux at boundary
+
+% CARBON MONOXIDE GAS
+res(0*Neq+7) = ya(7,1) - x_CO_C; % gas channel carbon monoxide content
+res(0*Neq+8) = yb(8,1) - ya(8,2); % flux continuity between GDL & CL
+res(2*Neq+7) = yb(7,1) - ya(7,2); % potential continuity between GDL & CL
+res(2*Neq+8) = yb(8,2); % zero flux at boundary
     
 end
 
