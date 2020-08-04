@@ -13,16 +13,19 @@ T_ref = T_0+25; % [K] reference temperature
 P = 1.5e5; % [Pa] total pressure in gas channel
 RH = 0.90; % [-] relative humidity in gas channel
 s_C = 0.01; % [-] liquid water saturation at GDL/GC interface
-T = T_0+80; % [K] temperature of gas channel
+T = T_0+30; % [K] temperature of gas channel
 
-N_w = 1e3*[0.0025:0.0025:0.01]'; % water injection flux (proxy for water generation)
+N_w = [0.5 1 1.5 2.0]'; % water injection flux (proxy for water generation)
 
 % MATERIAL PARAMETERS
-L = [100]*1e-6; % [m] gas diffusion layer thicccness
+L = [100 10]*1e-6; % [m] gas diffusion layer thicccness
 s_im = s_C; % [-] immobile liquid water saturation
 eps_p_GDL = 0.76; % [-] porosity of GDL
+eps_p_CL = 0.4; % [-] porosity of CL
 kappa_GDL = 6.15e-12; % [m^2] absolute permeability of GDL
+kappa_CL = 1e-13; % [m^2] absolute permeability of CL
 tau_GDL = 1.6; % [-] pore tortuosity of GDL
+tau_CL = 1.6; % [-] pore tortuosity of CL
 
 % WATER CONSTITUTIVE RELATIONSHIPS
 P_sat = @(T) exp(23.1963-3816.44./(T-46.13)); % [Pa] saturation pressure of water vapor
@@ -63,8 +66,8 @@ for k = 1:Np
 end
 % POSTPROCESSING
 Nref = 2; % number of refinements for smoother curve plotting
-domains = [1;
-           1];
+domains = [1 1;
+           1 1];
 shift = 1e-10;
 for k = 1:Np
     x = [];
@@ -124,6 +127,8 @@ ds    = z; dj_s    = z;
 dx_w = z; dj_x_w = z;
 
 % COMPUTE DERIVATIVES
+switch subdomain
+    case 1 % GAS DIFFUSION LAYER
         C = P./(R*T); % gas phase density
         x_sat = P_sat(T)./P; % saturation water vapor mole fraction
         S_ec = gamma_ec(x_w,x_sat,s,T).*C.*(x_w-x_sat); % evaporation/condensation reaction rate
@@ -131,13 +136,22 @@ dx_w = z; dj_x_w = z;
         dx_w = -j_x_w./(C.*D_H2O(eps_p_GDL,tau_GDL,s,T)); % water vapor flux: j_H2O_v = -rho_g*D_H2O*grad(x_H2O)
         dj_s = S_ec; % conservation of liquid water: div(j_s) = S_s
         dj_x_w = -S_ec; % conservation of water vapor: div(j_H2O_v) = S_H2O
+    case 2 % CATALYST LAYER
+        C = P./(R*T); % gas phase density
+        x_sat = P_sat(T)./P; % saturation water vapor mole fraction
+        S_ec = gamma_ec(x_w,x_sat,s,T).*C.*(x_w-x_sat); % evaporation/condensation reaction rate
+        ds = -j_s./((rho_w/M_w)*D_s(kappa_CL,s,T)); % liquid water flux: j_s = -rho_w*D_s*grad(s)
+        dx_w = -j_x_w./(C.*D_H2O(eps_p_CL,tau_CL,s,T)); % water vapor flux: j_H2O_v = -rho_g*D_H2O*grad(x_H2O)
+        dj_s = S_ec; % conservation of liquid water: div(j_s) = S_s
+        dj_x_w = -S_ec; % conservation of water vapor: div(j_H2O_v) = S_H2O
+end
 
 % ASSEMBLE DERIVATIVES
 dydx = [ds   ; dj_s  ;
         dx_w ; dj_x_w];
 end
 
-function y0 = yinit(x)
+function y0 = yinit(x, subdomain)
 % POTENTIALS INITIALLY SET TO GAS CHANNEL CONDITIONS
 s = s_C;
 x_w = x_H2O_C;
@@ -147,17 +161,21 @@ y0 = [s   ; 0;
       x_w ; 0];
 end
 
-function res = bcfun(ya, yb, n_w)
+function res = bcfun(ya, yb, N_w)
 
 res = ya(:); % homogeneous BC everywhere by default
 
 % LIQUID WATER
-res(0*Neq+1) = yb(1) - s_C;
-res(0*Neq+2) = ya(2) - n_w;
+res(0*Neq+1) = ya(1,1) - s_C; % GC liquid water content
+res(0*Neq+2) = yb(2,1) - ya(2,2); % flux continuity between GDL & CL  
+res(2*Neq+1) = ya(1,2) - yb(1,1); % potential continuity between GDL & CL
+res(2*Neq+2) = yb(2,2) + N_w; % flux at CL water interface
 
 % WATER VAPOR
-res(0*Neq+3) = yb(3) - x_H2O_C; % gas channel water vapor content
-res(0*Neq+4) = ya(4); % zero flux at boundary
+res(0*Neq+3) = ya(3,1) - x_H2O_C; % gas channel water vapor content
+res(0*Neq+4) = yb(4,1) - ya(4,2); % flux continuity between GDL & CL
+res(2*Neq+3) = yb(3,1) - ya(3,2); % potential continuity between GDL & CL
+res(2*Neq+4) = yb(4,2); % zero flux at boundary
     
 end
 
