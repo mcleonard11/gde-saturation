@@ -12,13 +12,13 @@ T_ref = T_0+25; % [K] reference temperature
 % OPERATING CONDITIONS
 P = 1.5e5; % [Pa] total pressure in gas channel
 RH = 0.90; % [-] relative humidity in gas channel
-s_C = 0.01; % [-] liquid water saturation at GDL/GC interface
+s_C = 0.14; % [-] liquid water saturation at GDL/GC interface
 T = T_0+30; % [K] temperature of gas channel
 alpha_CO2 = 0.9999; % [-] mole fraction of carbon dioxide in dry feed gas
 alpha_CO = 0.0001; % [-] mole fraction of carbon monoxide in dry feed gas
 
 N_w = 1; % [mol/(m^2*s)] water injection flux through CL
-i = [0 250 500]'; % [A/m^2] current density
+i = [0 200 400]'; % [A/m^2] current density
 
 % MATERIAL PARAMETERS
 L = [100 10]*1e-6; % [m] gas diffusion electrode domain thicccnesses
@@ -63,8 +63,10 @@ iff = @(cond,a,b) cond.*a + ~cond.*b; % vectorized ternary operator
 % MATERIAL CONSTITUTIVE RELATIONSHIPS
 s_red = @(s) (s-s_im)/(1-s_im); % reduced liquid water saturation
 gamma_ec = @(x_H2O,x_sat,s,T) 2e6*iff(x_H2O<x_sat,5e-4*s_red(s),6e-3*(1-s_red(s))).*sqrt(R*T/(2*pi*M_w)); % [1/s] evaporation/condensation rate
-dpds = @(s) 0.00011*44.02*exp(-44.02*(s-0.496))+278.3*8.103*exp(8.103*(s-0.496)); % [Pa] derivative of capillary pressure-saturation relationship of GDL
-D_s = @(kappa,s,T) kappa*(1e-6+s_red(s).^3)./mu(T).*dpds(s); % [m^2/s] liquid water transport coefficient
+dpds_GDL = @(s) 0.00011*44.02*exp(-44.02*(s-0.496))+278.3*8.103*exp(8.103*(s-0.496)); % [Pa] derivative of capillary pressure-saturation relationship of GDL
+dpds_CL = @(s) 1e3*(9.637./(s-0.146)+43.61./(-(s-1.041))-3*2.786*s.^2+2*387.3*s-2.574); % [Pa] derivative of capillary pressure-saturation relationship of CL
+D_s_GDL = @(kappa,s,T) kappa*(1e-6+s_red(s).^3)./mu(T).*dpds_GDL(s); % [m^2/s] liquid water transport coefficient
+D_s_CL = @(kappa,s,T) kappa*(1e-6+s_red(s).^3)./mu(T).*dpds_CL(s); % [m^2/s] liquid water transport coefficient
 
 % INITIAL MESH
 Lsum = [0 cumsum(L)];
@@ -158,7 +160,7 @@ switch subdomain
         C = P./(R*T); % gas phase density
         x_sat = P_sat(T)./P; % saturation water vapor mole fraction
         S_ec = gamma_ec(x_w,x_sat,s,T).*C.*(x_w-x_sat); % water evaporation/condensation reaction rate
-        ds = -j_s./((rho_w/M_w)*D_s(kappa_GDL,s,T)); % liquid water flux: j_s = -rho_w*D_s*grad(s) 
+        ds = -j_s./((rho_w/M_w)*D_s_GDL(kappa_GDL,s,T)); % liquid water flux: j_s = -rho_w*D_s*grad(s) 
         dx_w = -j_x_w./(C.*D_H2O(eps_p_GDL,tau_GDL,s,T)); % water vapor flux: j_H2O_g = -C*D_H2O*grad(x_H2O_g)
         dx_CO2 = -j_x_CO2./(C.*D_CO2(eps_p_GDL,tau_GDL,s,T)); % carbon dioxide gas flux: j_CO2 = -C*D_CO2*grad(x_CO2)
         dx_CO = -j_x_CO./(C.*D_CO(eps_p_GDL,tau_GDL,s,T)); % carbon monoxide gas flux: j_CO = -C*D_CO*grad(x_CO)
@@ -171,7 +173,7 @@ switch subdomain
         S_H2O = -ones(size(x_w))*a_CCL*i(k)/(2*F); % water reaction rate (Faraday's law)
         S_CO2 = -ones(size(x_CO2))*a_CCL*i(k)/(2*F); % carbon dioxide reaction rate (Faraday's law)
         S_CO = ones(size(x_CO))*a_CCL*i(k)/(2*F); % carbon monoxide reaction rate (Faraday's law)
-        ds = -j_s./((rho_w/M_w)*D_s(kappa_CL,s,T)); % liquid water flux: j_s = -rho_w*D_s*grad(s)
+        ds = -j_s./((rho_w/M_w)*D_s_CL(kappa_CL,s,T)); % liquid water flux: j_s = -rho_w*D_s*grad(s)
         dx_w = -j_x_w./(C.*D_H2O(eps_p_CL,tau_CL,s,T)); % water vapor flux: j_H2O_v = -rho_g*D_H2O*grad(x_H2O)
         dx_CO2 = -j_x_CO2./(C.*D_CO2(eps_p_CL,tau_CL,s,T)); % carbon dioxide gas flux: j_CO2 = -C*D_CO2*grad(x_CO2)
         dx_CO = -j_x_CO./(C.*D_CO(eps_p_CL,tau_CL,s,T)); % carbon monoxide gas flux: j_CO = -C*D_CO*grad(x_CO)
