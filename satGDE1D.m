@@ -12,12 +12,11 @@ T_ref = T_0+25; % [K] reference temperature
 % OPERATING CONDITIONS
 P = 1.5e5; % [Pa] total pressure in gas channel
 RH = 0.90; % [-] relative humidity in gas channel
-s_C = 0.14; % [-] liquid water saturation at GDL/GC interface
+s_C = 0.0749; % [-] liquid water saturation at GDL/GC interface
+s_CL = 0.40; % [-] liquid water saturation at CL boundary
 T = T_0+30; % [K] temperature of gas channel
 alpha_CO2 = 0.9999; % [-] mole fraction of carbon dioxide in dry feed gas
 alpha_CO = 0.0001; % [-] mole fraction of carbon monoxide in dry feed gas
-
-N_w = 1; % [mol/(m^2*s)] water injection flux through CL
 i = [0 200 400]'; % [A/m^2] current density
 
 % MATERIAL PARAMETERS
@@ -63,7 +62,9 @@ iff = @(cond,a,b) cond.*a + ~cond.*b; % vectorized ternary operator
 % MATERIAL CONSTITUTIVE RELATIONSHIPS
 s_red = @(s) (s-s_im)/(1-s_im); % reduced liquid water saturation
 gamma_ec = @(x_H2O,x_sat,s,T) 2e6*iff(x_H2O<x_sat,5e-4*s_red(s),6e-3*(1-s_red(s))).*sqrt(R*T/(2*pi*M_w)); % [1/s] evaporation/condensation rate
-dpds_GDL = @(s) 0.00011*44.02*exp(-44.02*(s-0.496))+278.3*8.103*exp(8.103*(s-0.496)); % [Pa] derivative of capillary pressure-saturation relationship of GDL
+pc_GDL = @(s) 1e3*(0.4.*log(s-0.0749)-1.7.*log(-(s-1.0))+2.1); % [Pa] capillary pressure saturation relationship of GDL
+pc_CL = @(s) 1e3*(9.637.*log(s-0.146)-43.61.*log(-(s-1.041))-278.6.*s.^3+387.3.*s.^2-257.4.*s+52.22); % [Pa] capillary pressure saturation relationship of CL
+dpds_GDL = @(s) 1e3*(0.4./(s-0.0749)+1.7./(-(s-1.0))); % [Pa] derivative of capillary pressure-saturation relationship of GDL
 dpds_CL = @(s) 1e3*(9.637./(s-0.146)+43.61./(-(s-1.041))-3*2.786*s.^2+2*387.3*s-2.574); % [Pa] derivative of capillary pressure-saturation relationship of CL
 D_s_GDL = @(kappa,s,T) kappa*(1e-6+s_red(s).^3)./mu(T).*dpds_GDL(s); % [m^2/s] liquid water transport coefficient
 D_s_CL = @(kappa,s,T) kappa*(1e-6+s_red(s).^3)./mu(T).*dpds_CL(s); % [m^2/s] liquid water transport coefficient
@@ -192,7 +193,7 @@ end
 
 function y0 = yinit(x, subdomain)
 % POTENTIALS INITIALLY SET TO GAS CHANNEL CONDITIONS
-s = s_C;
+s = iff(subdomain>1,s_CL,s_C);
 x_w = x_H2O_C;
 x_CO2 = x_CO2_C;
 x_CO = x_CO_C;
@@ -211,8 +212,8 @@ res = ya(:); % homogeneous BC everywhere by default
 % LIQUID WATER
 res(0*Neq+1) = ya(1,1) - s_C; % GC liquid water content
 res(0*Neq+2) = yb(2,1) - ya(2,2); % flux continuity between GDL & CL  
-res(2*Neq+1) = ya(1,2) - yb(1,1); % potential continuity between GDL & CL
-res(2*Neq+2) = yb(2,2) + N_w; % water injection flux to CL
+res(2*Neq+1) = yb(1,2) - s_CL; % potential continuity between GDL & CL
+res(2*Neq+2) = yb(2,2) + i(k)/(2*F); % water injection flux to CL
 
 % WATER VAPOR
 res(0*Neq+3) = ya(3,1) - x_H2O_C; % gas channel water vapor content
