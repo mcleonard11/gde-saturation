@@ -106,9 +106,9 @@ SOL = cell(size(U));
 Np = numel(U); % number of parameters in the sweep
 Neq = size(sol.y,1)/2; % number of 2nd-order differential equations
 for k = 1:Np
-    sol = bvp4c(@odefun, @(ya,yb) bcfun(ya, yb), sol, options);
+    sol = bvp4c(@odefun, @(ya,yb) bcfun(ya, yb, U(k)), sol, options);
     SOL{k} = sol;
-    I(k) = sol.y(12,end)/1e4; % current density in [A/cm^2]
+    I(k) = sol.y(12,1)/10; % current density in [mA/cm^2]
 end
 UI = [U(:) I(:)];
 % POSTPROCESSING
@@ -170,9 +170,8 @@ end
 figure('Name', 'Polarization curve')
 fnplt(cscvn([U; I]))
 xlabel({'Cell voltage [V]'})
-ylabel('Current density [A/cm^2]')
+ylabel('Current density [mA/cm^2]')
 set(gca,'XDir','reverse');
-set(gca,'YDir','reverse');
 
 function dydx = odefun(x, y, subdomain)
 
@@ -261,7 +260,7 @@ y0 = [s     ; 0 ;
       phi_e ; 0 ;];
 end
 
-function res = bcfun(ya, yb)
+function res = bcfun(ya, yb, U)
 
 res = ya(:); % homogeneous BC everywhere by default
 
@@ -296,10 +295,10 @@ res(2*Neq+9 ) = yb( 9,1) - ya(9,2); % potential continuity between GDL & CL
 res(2*Neq+10) = yb(10,2); % zero flux at boundary
 
 % ELECTRONS
-res(0*Neq+11 ) = ya(11,1) - U(k); % current collector electrical potential
+res(0*Neq+11 ) = ya(11,1) - U; % current collector electrical potential
 res(0*Neq+12) = yb(12,1) - ya(12,2); % flux continuity between GDL & CL
 res(2*Neq+11 ) = yb(11,1) - ya(11,2); % potential continuity between GDL & CL
-res(2*Neq+12) = yb(12,1); % zero flux at boundary
+res(2*Neq+12) = yb(12,2); % zero flux at boundary
     
 end
 
