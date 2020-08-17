@@ -12,13 +12,13 @@ T_ref = T_0+25; % [K] reference temperature
 % OPERATING CONDITIONS
 P = 1.5e5; % [Pa] total pressure in gas channel
 RH = 0.90; % [-] relative humidity in gas channel
-s_C = 0.0749; % [-] liquid water saturation at GDL/GC interface
-s_CL = 0.15; % [-] liquid water saturation at CL boundary
+s_GDL = 0.0749; % [-] liquid water saturation at GDL/GC interface
+s_CL = 0.4165; % [-] liquid water saturation at CL boundary
 T = T_0+30; % [K] temperature of gas channel
 alpha_CO2 = 0.9999; % [-] mole fraction of carbon dioxide in dry feed gas
 alpha_CO = 0.00005; % [-] mole fraction of carbon monoxide in dry feed gas
 alpha_H2 = 0.00005; % [-] mole fraction of hydrogen in dry feed gas
-U = [0:-0.05:-0.4]; % [V] applied voltage at current collector
+U = [0:-0.025:-0.75]; % [V] applied voltage at current collector
 
 % ELECTROCHEMICAL PARAMETERS
 i_0_COER = @(T) 7.25e9*exp(-100e3/R/T); % [A/m^2] exchange current density of COER (alkaline)
@@ -35,7 +35,8 @@ gamma_BV_CO2 = 1.5; % CO2 correction exponent for concentration dependent Butler
 % MATERIAL PARAMETERS
 L = [100 10]*1e-6; % [m] gas diffusion electrode domain thicccnesses
 a_CCL = 3e7; % [m^2/m^3] ECSA density of CCL
-s_im = s_C; % [-] immobile liquid water saturation
+s_im_GDL = 0.0749; % [-] immobile liquid water saturation in GDL
+s_im_CL = 0.146; % [-] immobile liquid water saturation in CL
 eps_p_GDL = 0.76; % [-] porosity of GDL
 eps_p_CL = 0.4; % [-] porosity of CL
 kappa_GDL = 6.15e-12; % [m^2] absolute permeability of GDL
@@ -81,14 +82,14 @@ x_H2_C = alpha_H2*(1-x_H2O_C); % [-] mole fraction of hydrogen in gas channel
 iff = @(cond,a,b) cond.*a + ~cond.*b; % vectorized ternary operator
 
 % MATERIAL CONSTITUTIVE RELATIONSHIPS
-s_red = @(s) (s-s_im)/(1-s_im); % reduced liquid water saturation
-gamma_ec = @(x_H2O,x_sat,s,T) 2e6*iff(x_H2O<x_sat,5e-4*s_red(s),6e-3*(1-s_red(s))).*sqrt(R*T/(2*pi*M_w)); % [1/s] evaporation/condensation rate
+s_red = @(s,s_im) (s-s_im)/(1-s_im); % reduced liquid water saturation
+gamma_ec = @(x_H2O,x_sat,s_im,s,T) 2e6*iff(x_H2O<x_sat,5e-4*s_red(s,s_im),6e-3*(1-s_red(s,s_im))).*sqrt(R*T/(2*pi*M_w)); % [1/s] evaporation/condensation rate
 pc_GDL = @(s) 1e3*(0.4.*log(s-0.0749)-1.7.*log(-(s-1.0))+2.1); % [Pa] capillary pressure saturation relationship of GDL
 pc_CL = @(s) 1e3*(9.637.*log(s-0.146)-43.61.*log(-(s-1.041))-278.6.*s.^3+387.3.*s.^2-257.4.*s+52.22); % [Pa] capillary pressure saturation relationship of CL
 dpds_GDL = @(s) 1e3*(0.4./(s-0.0749)+1.7./(-(s-1.0))); % [Pa] derivative of capillary pressure-saturation relationship of GDL
 dpds_CL = @(s) 1e3*(9.637./(s-0.146)+43.61./(-(s-1.041))-3*2.786*s.^2+2*387.3*s-2.574); % [Pa] derivative of capillary pressure-saturation relationship of CL
-D_s_GDL = @(kappa,s,T) kappa*(1e-6+s_red(s).^3)./mu(T).*dpds_GDL(s); % [m^2/s] liquid water transport coefficient
-D_s_CL = @(kappa,s,T) kappa*(1e-6+s_red(s).^3)./mu(T).*dpds_CL(s); % [m^2/s] liquid water transport coefficient
+D_s_GDL = @(kappa,s,T) kappa*(1e-6+s_red(s,s_im_GDL).^3)./mu(T).*dpds_GDL(s); % [m^2/s] liquid water transport coefficient
+D_s_CL = @(kappa,s,T) kappa*(1e-6+s_red(s,s_im_CL).^3)./mu(T).*dpds_CL(s); % [m^2/s] liquid water transport coefficient
 
 % INITIAL MESH
 Lsum = [0 cumsum(L)];
@@ -109,7 +110,7 @@ for k = 1:Np
     SOL{k} = sol;
     I(k) = sol.y(12,end)/1e4; % current density in [A/cm^2]
 end
-IU = [I(:) U(:)];
+UI = [U(:) I(:)];
 % POSTPROCESSING
 Nref = 2; % number of refinements for smoother curve plotting
 domains = [1 1;
@@ -139,10 +140,10 @@ end
 % PLOT SOLUTION
 fig_names = {'Potentials', 'Fluxes'};
 unit_scale = [1 1 1 1 1 1;
-              1 1 1 1 1 1];
-quantity = {'{\its}','{\itx}_{H_2O}','{\itx}_{CO_2}','{\itx}_{CO}','{\itx}_{H2}','{\it\phi}_e [V]';
-            '\itj_s','{\itj}_{H2O}','{\itj}_{CO_2}','{\itj}_{CO}','{\itj}_{H2}','{\itj}_e [A/cm^2]'};
-c = winter(Np);
+              1 1 1 1 1 0.1];
+quantity = {'{\its}','{\itx}_{H_2O}','{\itx}_{CO_2}','{\itx}_{CO}','{\itx}_{H_2}','{\it\phi}_e [V]';
+            '\itj_s','{\itj}_{H2O}','{\itj}_{CO_2}','{\itj}_{CO}','{\itj}_{H_2}','{\itj}_e [mA/cm^2]'};
+c = jet(Np);
 for m = 1:2
     figure('Name', fig_names{m})
     for n = 1:Neq
@@ -167,10 +168,11 @@ end
 
 % PLOT POLARIZATION CURVE
 figure('Name', 'Polarization curve')
-fnplt(cscvn([I; U]))
-xlabel('Current density [A/cm^2]')
-ylabel({'Cell voltage [V]'})
-% xlim([0 max(I)])
+fnplt(cscvn([U; I]))
+xlabel({'Cell voltage [V]'})
+ylabel('Current density [A/cm^2]')
+set(gca,'XDir','reverse');
+set(gca,'YDir','reverse');
 
 function dydx = odefun(x, y, subdomain)
 
@@ -196,7 +198,7 @@ switch subdomain
     case 1 % GAS DIFFUSION LAYER
         C = P./(R*T); % gas phase density
         x_sat = P_sat(T)./P; % saturation water vapor mole fraction
-        S_ec = gamma_ec(x_w,x_sat,s,T).*C.*(x_w-x_sat); % water evaporation/condensation reaction rate
+        S_ec = gamma_ec(x_w,x_sat,s_im_GDL,s,T).*C.*(x_w-x_sat); % water evaporation/condensation reaction rate
         ds = -j_s./((rho_w/M_w)*D_s_GDL(kappa_GDL,s,T)); % liquid water flux: j_s = -rho_w*D_s*grad(s) 
         dx_w = -j_x_w./(C.*D_H2O(eps_p_GDL,tau_GDL,s,T)); % water vapor flux: j_H2O_g = -C*D_H2O*grad(x_H2O_g)
         dx_CO2 = -j_x_CO2./(C.*D_CO2(eps_p_GDL,tau_GDL,s,T)); % carbon dioxide gas flux: j_CO2 = -C*D_CO2*grad(x_CO2)
@@ -207,13 +209,13 @@ switch subdomain
         dj_x_w = -S_ec; % conservation of water vapor: div(j_H2O_g) = S_H2O
     case 2 % CATALYST LAYER
         C = P./(R*T); % gas phase density
-        C_AQ_CO2 = P*x_CO2*34; % [mol/m^3] Dissolved carbon dioxide concentration at 298.15 K, 1 atm [Henry's law] 
+        C_AQ_CO2 = (P/101325)*x_CO2*34; % [mol/m^3] Equilibrium dissolved carbon dioxide concentration at 298.15 K, 1 atm [Henry's law] 
         x_sat = P_sat(T)./P; % saturation water vapor mole fraction
-        eta_COER = iff((phi_e-U_0_COER)<0,phi_e-U_0_COER,0); % COER overpotential
-        eta_HER = iff((phi_e-U_0_HER)<0,phi_e-U_0_HER,0); % HER overpotential
+        eta_COER = iff((phi_e-U_0_COER)>0,0,phi_e-U_0_COER); % COER overpotential
+        eta_HER = iff((phi_e-U_0_HER)>0,0,phi_e-U_0_HER); % HER overpotential
         i_COER = BV(i_0_COER(T),C_AQ_CO2,C_ref_CO2,gamma_BV_CO2,beta_COER,T,eta_COER); % COER electrochemical reaction rate
         i_HER = BV(i_0_HER(T,14),p_ref_H2,p_ref_H2,gamma_BV_H,beta_HER,T,eta_HER); % HER electrochemical reaction rate
-        S_ec = gamma_ec(x_w,x_sat,s,T).*C.*(x_w-x_sat); % evaporation/condensation reaction rate
+        S_ec = gamma_ec(x_w,x_sat,s_im_CL,s,T).*C.*(x_w-x_sat); % evaporation/condensation reaction rate
         S_H2O = -a_CCL*(i_COER/(2*F)+i_HER/F); % water reaction rate (Faraday's law)
         S_CO2 = -a_CCL*i_COER/(2*F); % carbon dioxide reaction rate (Faraday's law)
         S_CO = a_CCL*i_COER/(2*F); % carbon monoxide reaction rate (Faraday's law)
@@ -243,7 +245,7 @@ end
 
 function y0 = yinit(x, subdomain)
 % POTENTIALS INITIALLY SET TO GAS CHANNEL CONDITIONS
-s = iff(subdomain>1,s_CL,s_C);
+s = iff(subdomain>1,s_CL,s_GDL);
 x_w = x_H2O_C;
 x_CO2 = x_CO2_C;
 x_CO = x_CO_C;
@@ -264,9 +266,9 @@ function res = bcfun(ya, yb)
 res = ya(:); % homogeneous BC everywhere by default
 
 % LIQUID WATER
-res(0*Neq+1) = ya(1,1) - s_C; % GC liquid water content
+res(0*Neq+1) = ya(1,1) - s_GDL; % GDL water content at GC
 res(0*Neq+2) = yb(2,1) - ya(2,2); % flux continuity between GDL & CL  
-res(2*Neq+1) = yb(1,2) - s_CL; % potential continuity between GDL & CL
+res(2*Neq+1) = yb(1,2) - s_CL; % CL water content at liquid boundary
 res(2*Neq+2) = yb(2,2); % water injection flux to CL
 
 % WATER VAPOR
