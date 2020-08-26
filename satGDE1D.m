@@ -44,15 +44,15 @@ nu_p_CO = 18.9; % [-] diffusion volume of gaseous species
 M_H2O = 18.02; % [g/mol] molar mass of gaseous species
 M_CO2 = 44.01; % [g/mol] molar mass of gaseous species
 M_CO = 28.01; % [g/mol] molar mass of gaseous species
-D_H2O_ref = D_ab(nu_p_H2O,nu_p_CO2,M_H2O,M_CO2,P_ref,T_ref); % [m^2/s] reference diffusion coefficient, H2O in CO2
-D_CO2_ref = D_ab(nu_p_CO2,nu_p_CO2,M_CO2,M_CO2,P_ref,T_ref); % [m^2/s] reference diffusion coefficient, CO2 in CO2
-D_CO_ref = D_ab(nu_p_CO,nu_p_CO2,M_CO,M_CO2,P_ref,T_ref); % [m^2/s] reference diffusion coefficient, CO in CO2
+D_H2O_CO2_ref = D_ab(nu_p_H2O,nu_p_CO2,M_H2O,M_CO2,P_ref,T_ref); % [m^2/s] reference diffusion coefficient, H2O in CO2
+D_H2O_CO_ref = D_ab(nu_p_H2O,nu_p_CO,M_H2O,M_CO,P_ref,T_ref); % [m^2/s] reference diffusion coefficient, H2O in CO2
+D_CO_CO2_ref = D_ab(nu_p_CO,nu_p_CO2,M_CO,M_CO2,P_ref,T_ref); % [m^2/s] reference diffusion coefficient, CO in CO2
 
 % MODEL PARAMETERIZATION
 D = @(eps_p,tau,s,P,T) eps_p/tau^2*(1-s).^3.*(T/T_ref).^1.5*(P_ref/P); % [-] scaling factor for gas diffusivities
-D_H2O = @(eps_p,tau,s,T) D_H2O_ref*D(eps_p,tau,s,P,T); % [m^2/s] H2O gas phase diffusion coefficient
-D_CO2 = @(eps_p,tau,s,T) D_CO2_ref*D(eps_p,tau,s,P,T); % [m^2/s] CO2 gas phase diffusion coefficient
-D_CO = @(eps_p,tau,s,T) D_CO_ref*D(eps_p,tau,s,P,T); % [m^2/s] CO2 gas phase diffusion coefficient
+D_H2O_CO2 = @(eps_p,tau,s,T) D_H2O_CO2_ref*D(eps_p,tau,s,P,T); % [m^2/s] H2O gas phase diffusion coefficient
+D_H2O_CO = @(eps_p,tau,s,T) D_H2O_CO_ref*D(eps_p,tau,s,P,T); % [m^2/s] H2O gas phase diffusion coefficient
+D_CO_CO2 = @(eps_p,tau,s,T) D_CO_CO2_ref*D(eps_p,tau,s,P,T); % [m^2/s] CO2 gas phase diffusion coefficient
 x_H2O_C = RH*P_sat(T)/P; % [-] mole fraction of water vapor in gas channel
 x_CO2_C = alpha_CO2*(1-x_H2O_C); % [-] mole fraction of carbon dioxide in gas channel
 x_CO_C = alpha_CO*(1-x_H2O_C); % [-] mole fraction of carbon monoxide in gas channel
@@ -159,9 +159,9 @@ switch subdomain
         x_sat = P_sat(T)./P; % saturation water vapor mole fraction
         S_ec = gamma_ec(x_w,x_sat,s,T).*C.*(x_w-x_sat); % water evaporation/condensation reaction rate
         ds = -j_s./((rho_w/M_w)*D_s(kappa_GDL,s,T)); % liquid water flux: j_s = -rho_w*D_s*grad(s) 
-        dx_w = -j_x_w./(C.*D_H2O(eps_p_GDL,tau_GDL,s,T)); % water vapor flux: j_H2O_g = -C*D_H2O*grad(x_H2O_g)
-        dx_CO2 = -j_x_CO2./(C.*D_CO2(eps_p_GDL,tau_GDL,s,T)); % carbon dioxide gas flux: j_CO2 = -C*D_CO2*grad(x_CO2)
-        dx_CO = -j_x_CO./(C.*D_CO(eps_p_GDL,tau_GDL,s,T)); % carbon monoxide gas flux: j_CO = -C*D_CO*grad(x_CO)
+        dx_w = d_x_SM(C,x_w,j_x_w,[x_CO2;x_CO],[j_x_CO2;j_x_CO],[D_H2O_CO2(eps_p_GDL,tau_GDL,s,T);D_H2O_CO(eps_p_GDL,tau_GDL,s,T)]);     
+        dx_CO2 = d_x_SM(C,x_CO2,j_x_CO2,[x_w;x_CO],[j_x_w;j_x_CO],[D_H2O_CO2(eps_p_GDL,tau_GDL,s,T);D_CO_CO2(eps_p_GDL,tau_GDL,s,T)]);     
+        dx_CO = d_x_SM(C,x_CO,j_x_CO,[x_w;x_CO2],[j_x_w;j_x_CO2],[D_H2O_CO(eps_p_GDL,tau_GDL,s,T);D_CO_CO2(eps_p_GDL,tau_GDL,s,T)]);
         dj_s = S_ec; % conservation of liquid water: div(j_s) = S_s
         dj_x_w = -S_ec; % conservation of water vapor: div(j_H2O_g) = S_H2O
     case 2 % CATALYST LAYER
@@ -172,9 +172,9 @@ switch subdomain
         S_CO2 = -ones(size(x_CO2))*a_CCL*i(k)/(2*F); % carbon dioxide reaction rate (Faraday's law)
         S_CO = ones(size(x_CO))*a_CCL*i(k)/(2*F); % carbon monoxide reaction rate (Faraday's law)
         ds = -j_s./((rho_w/M_w)*D_s(kappa_CL,s,T)); % liquid water flux: j_s = -rho_w*D_s*grad(s)
-        dx_w = -j_x_w./(C.*D_H2O(eps_p_CL,tau_CL,s,T)); % water vapor flux: j_H2O_v = -rho_g*D_H2O*grad(x_H2O)
-        dx_CO2 = -j_x_CO2./(C.*D_CO2(eps_p_CL,tau_CL,s,T)); % carbon dioxide gas flux: j_CO2 = -C*D_CO2*grad(x_CO2)
-        dx_CO = -j_x_CO./(C.*D_CO(eps_p_CL,tau_CL,s,T)); % carbon monoxide gas flux: j_CO = -C*D_CO*grad(x_CO)
+        dx_w = d_x_SM(C,x_w,j_x_w,[x_CO2;x_CO],[j_x_CO2;j_x_CO],[D_H2O_CO2(eps_p_CL,tau_CL,s,T);D_H2O_CO(eps_p_CL,tau_CL,s,T)]);     
+        dx_CO2 = d_x_SM(C,x_CO2,j_x_CO2,[x_w;x_CO],[j_x_w;j_x_CO],[D_H2O_CO2(eps_p_CL,tau_CL,s,T);D_CO_CO2(eps_p_CL,tau_CL,s,T)]);     
+        dx_CO = d_x_SM(C,x_CO,j_x_CO,[x_w;x_CO2],[j_x_w;j_x_CO2],[D_H2O_CO(eps_p_CL,tau_CL,s,T);D_CO_CO2(eps_p_CL,tau_CL,s,T)]);
         dj_s = S_ec + S_H2O; % conservation of liquid water: div(j_s) = S_s
         dj_x_w = -S_ec; % conservation of water vapor: div(j_H2O_v) = S_H2O
         dj_x_CO2 = S_CO2; % conservation of carbon dioxide gas: div(j_CO2) = S_CO2
@@ -232,5 +232,18 @@ res(2*Neq+8) = yb(8,2); % zero flux at boundary
     
 end
 
+function d_x_i = d_x_SM(C_T,x_i,N_i,X_j,N_j,D_ij)
+    % m   : number of domain position elements [-] (1-D domain vector length)
+    % C_T : total gas concentration scalar [mol/m^3]
+    % x_i : mole fraction vector component i [-], (1 x m)
+    % N_i : molar flux vector component i [-], (1 x m)
+    % X_j : mole fraction matrix components j [-], (1+count(j)) x m)
+    % N_j : molar flux matrix components j [-], (1+count(j)) x m)
+    % D_ij: binary diffusivity vectors for {i,j} [m^2/s], (count(j) x m)
+    d_x_i = zeros(1,length(x_i));
+    for j = 1:size(X_j,1)
+        d_x_i = d_x_i + (x_i .* N_j(j,:) - X_j(j,:) .* N_i) ./ (C_T .* D_ij(j,:));
+    end
+end
 
 end
