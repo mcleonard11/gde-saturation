@@ -33,7 +33,8 @@ tau_GDL = 1.6; % [-] pore tortuosity of GDL
 tau_CL = 1.6; % [-] pore tortuosity of CL
 
 % WATER CONSTITUTIVE RELATIONSHIPS
-P_sat = @(T) exp(23.1963-3816.44./(T-46.13)); % [Pa] saturation pressure of water vapor
+P_sat_o = @(T) exp(23.1963-3816.44./(T-46.13)); % [Pa] uncorrected saturation pressure of water vapor
+P_sat = @(T,P_C) P_sat_o(T).*exp(P_C.*(M_w/rho_w)./(R.*T)); % [Pa] capillary pressure corrected saturation pressure of water vapor
 mu = @(T) 1e-3*exp(-3.63148+542.05./(T-144.15)); % [Pa*s] dynamic viscosity of liquid water
 
 % DIFFUSION COEFFICIENTS
@@ -54,7 +55,7 @@ D = @(eps_p,tau,s,P,T) eps_p/tau^2*(1-s).^3.*(T/T_ref).^1.5*(P_ref/P); % [-] sca
 D_H2O_CO2 = @(eps_p,tau,s,T) D_H2O_CO2_ref*D(eps_p,tau,s,P,T); % [m^2/s] H2O gas phase diffusion coefficient
 D_H2O_CO = @(eps_p,tau,s,T) D_H2O_CO_ref*D(eps_p,tau,s,P,T); % [m^2/s] H2O gas phase diffusion coefficient
 D_CO_CO2 = @(eps_p,tau,s,T) D_CO_CO2_ref*D(eps_p,tau,s,P,T); % [m^2/s] CO2 gas phase diffusion coefficient
-x_H2O_C = RH*P_sat(T)/P; % [-] mole fraction of water vapor in gas channel
+x_H2O_C = RH*P_sat_o(T)/P; % [-] mole fraction of water vapor in gas channel
 x_CO2_C = alpha_CO2*(1-x_H2O_C); % [-] mole fraction of carbon dioxide in gas channel
 x_CO_C = alpha_CO*(1-x_H2O_C); % [-] mole fraction of carbon monoxide in gas channel
 
@@ -167,10 +168,10 @@ dx_CO  = z; dj_x_CO  = z;
 % COMPUTE DERIVATIVES
 switch subdomain
     case 1 % GAS DIFFUSION LAYER
-        C = P./(R*T); % gas phase density
-        x_sat = P_sat(T)./P; % saturation water vapor mole fraction
         p_G = P; % [Pa] gas phase absolute pressure (isobaric)
         p_C = p_L - p_G; % [Pa] capillary pressure
+        C = P./(R*T); % gas phase density
+        x_sat = P_sat(T,p_C)./P; % saturation water vapor mole fraction
         s = S_PC(p_C,'GDL'); % [-] liquid saturation fraction of pore space
         S_ec = gamma_ec(x_w,x_sat,s,s_im_GDL,T).*C.*(x_w-x_sat); % water evaporation/condensation reaction rate
         dp_L = -j_L./((rho_w/M_w).*kappa_eff_L(kappa_GDL,s,s_im_GDL)./mu(T)); % liquid water flux: j_L = -rho_L*(kappa_L/mu_L)*grad(p_L)
@@ -180,10 +181,10 @@ switch subdomain
         dj_L = S_ec; % conservation of liquid water: div(j_L) = S_L
         dj_x_w = -S_ec; % conservation of water vapor: div(j_H2O_g) = S_H2O
     case 2 % CATALYST LAYER
-        C = P./(R*T); % gas phase density
-        x_sat = P_sat(T)./P; % saturation water vapor mole fraction
         p_G = P; % [Pa] gas phase absolute pressure (isobaric)
         p_C = p_L - p_G; % [Pa] capillary pressure
+        C = P./(R*T); % gas phase density
+        x_sat = P_sat(T,p_C)./P; % saturation water vapor mole fraction
         s = S_PC(p_C,'CL'); % [-] liquid saturation fraction of pore space
         S_ec = gamma_ec(x_w,x_sat,s,s_im_CL,T).*C.*(x_w-x_sat); % evaporation/condensation reaction rate
         S_H2O = -ones(size(x_w))*a_CCL*i(k)/(2*F); % water reaction rate (Faraday's law)
