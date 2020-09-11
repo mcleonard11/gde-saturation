@@ -11,14 +11,14 @@ T_ref = T_0+25; % [K] reference temperature
 
 % OPERATING CONDITIONS
 P = 1.5e5; % [Pa] total pressure in gas channel
-RH = 0.0; % [-] relative humidity in gas channel
+RH = 0.90; % [-] relative humidity in gas channel
 p_C_GC = 0; % [Pa] capillary pressure at GDL/GC interface
 T = T_0+30; % [K] temperature of gas channel
 alpha_CO2 = 0.9999; % [-] mole fraction of carbon dioxide in dry feed gas
 alpha_CO = 0.0001; % [-] mole fraction of carbon monoxide in dry feed gas
 
 % N_w = 0.005; % [mol/(m^2*s)] water injection flux through CL
-i = [0:100:500]'; % [A/m^2] current density
+i = [0:200:1000]'; % [A/m^2] current density
 
 % MATERIAL PARAMETERS
 L = [300 45]*1e-6; % [m] gas diffusion electrode domain thicccnesses
@@ -58,11 +58,17 @@ D_H2O_CO2_ref = D_ab(nu_p_H2O,nu_p_CO2,M_H2O,M_CO2,P_ref,T_ref); % [m^2/s] refer
 D_H2O_CO_ref = D_ab(nu_p_H2O,nu_p_CO,M_H2O,M_CO,P_ref,T_ref); % [m^2/s] reference diffusion coefficient, H2O in CO2
 D_CO_CO2_ref = D_ab(nu_p_CO,nu_p_CO2,M_CO,M_CO2,P_ref,T_ref); % [m^2/s] reference diffusion coefficient, CO in CO2
 
+% DIFFUSION COEFFICIENTS (KNUDSEN)
+D_K_a = @(r_K,T,M_a) (2/3)*r_K.*(8*R*T/pi./M_a).^0.5; % [m^2/s] Knudsen diffusion coefficient for species a in pore radius r_K
+
 % MODEL PARAMETERIZATION
 D = @(eps_p,tau,s,P,T) eps_p/tau^2*(1-s).^3.*(T/T_ref).^1.5*(P_ref/P); % [-] scaling factor for gas diffusivities
 D_H2O_CO2 = @(eps_p,tau,s,T) D_H2O_CO2_ref*D(eps_p,tau,s,P,T); % [m^2/s] H2O gas phase diffusion coefficient
 D_H2O_CO = @(eps_p,tau,s,T) D_H2O_CO_ref*D(eps_p,tau,s,P,T); % [m^2/s] H2O gas phase diffusion coefficient
 D_CO_CO2 = @(eps_p,tau,s,T) D_CO_CO2_ref*D(eps_p,tau,s,P,T); % [m^2/s] CO2 gas phase diffusion coefficient
+D_K_H2O = @(r_K,eps_p,tau,s,T) D_K_a(r_K,T,M_H2O/1e3).*D(eps_p,tau,s,P,T); % [m^2/s] H2O Knudsen diffusion coefficient
+D_K_CO2 = @(r_K,eps_p,tau,s,T) D_K_a(r_K,T,M_CO2/1e3).*D(eps_p,tau,s,P,T); % [m^2/s] H2O Knudsen diffusion coefficient
+D_K_CO = @(r_K,eps_p,tau,s,T) D_K_a(r_K,T,M_CO/1e3).*D(eps_p,tau,s,P,T); % [m^2/s] H2O Knudsen diffusion coefficient
 x_H2O_C = RH*P_sat_o(T)/P; % [-] mole fraction of water vapor in gas channel
 x_CO2_C = alpha_CO2*(1-x_H2O_C); % [-] mole fraction of carbon dioxide in gas channel
 x_CO_C = alpha_CO*(1-x_H2O_C); % [-] mole fraction of carbon monoxide in gas channel
@@ -221,8 +227,14 @@ switch subdomain
         S_ec = gamma_ec(x_w,x_sat,s,s_im_MPL,T).*C.*(x_w-x_sat); % water evaporation/condensation reaction rate
         dp_L = -j_L./((rho_w/M_w).*kappa_L_eff(kappa_L_MPL,p_C,'MPL',theta_MPL)./mu(T)); % liquid water flux: j_L = -rho_L*(kappa_L/mu_L)*grad(p_L)
         dx_w = d_x_SM(C,x_w,j_x_w,[x_CO2;x_CO],[j_x_CO2;j_x_CO],[D_H2O_CO2(eps_p_MPL,tau_MPL,s,T);D_H2O_CO(eps_p_MPL,tau_MPL,s,T)]);     
-        dx_CO2 = d_x_SM(C,x_CO2,j_x_CO2,[x_w;x_CO],[j_x_w;j_x_CO],[D_H2O_CO2(eps_p_MPL,tau_MPL,s,T);D_CO_CO2(eps_p_MPL,tau_MPL,s,T)]);     
+        dx_CO2 = d_x_SM(C,x_CO2,j_x_CO2,[x_w;x_CO],[j_x_w;j_x_CO],[D_H2O_CO2(eps_p_MPL,tau_MPL,s,T);D_CO_CO2(eps_p_MPL,tau_MPL,s,T)]); 
         dx_CO = d_x_SM(C,x_CO,j_x_CO,[x_w;x_CO2],[j_x_w;j_x_CO2],[D_H2O_CO(eps_p_MPL,tau_MPL,s,T);D_CO_CO2(eps_p_MPL,tau_MPL,s,T)]);
+%         dx_w = d_x_SM(C,x_w,j_x_w,[x_CO2;x_CO],[j_x_CO2;j_x_CO],[D_H2O_CO2(eps_p_MPL,tau_MPL,s,T);D_H2O_CO(eps_p_MPL,tau_MPL,s,T)])...
+%             - j_x_w./(C.*D_K_H2O(r_K(p_C,'MPL',theta_MPL),eps_p_MPL,tau_MPL,s,T));     
+%         dx_CO2 = d_x_SM(C,x_CO2,j_x_CO2,[x_w;x_CO],[j_x_w;j_x_CO],[D_H2O_CO2(eps_p_MPL,tau_MPL,s,T);D_CO_CO2(eps_p_MPL,tau_MPL,s,T)])...
+%             - j_x_CO2./(C.*D_K_CO2(r_K(p_C,'MPL',theta_MPL),eps_p_MPL,tau_MPL,s,T));     
+%         dx_CO = d_x_SM(C,x_CO,j_x_CO,[x_w;x_CO2],[j_x_w;j_x_CO2],[D_H2O_CO(eps_p_MPL,tau_MPL,s,T);D_CO_CO2(eps_p_MPL,tau_MPL,s,T)])...
+%             - j_x_CO./(C.*D_K_CO(r_K(p_C,'MPL',theta_MPL),eps_p_MPL,tau_MPL,s,T));
         dj_L = S_ec; % conservation of liquid water: div(j_L) = S_L
         dj_x_w = -S_ec; % conservation of water vapor: div(j_H2O_g) = S_H2O
 %     case 3 % CATALYST LAYER
