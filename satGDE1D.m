@@ -13,7 +13,7 @@ T_ref = T_0+25; % [K] reference temperature
 P = 1.5e5; % [Pa] total pressure in gas channel
 RH = 0.90; % [-] relative humidity in gas channel
 p_C_GC = 0; % [Pa] capillary pressure at GDL/GC interface
-p_C_LC = 100; % [Pa] capillary pressure at Liquid channel interface
+p_C_LC = 500; % [Pa] capillary pressure at Liquid channel interface
 T_C = T_0+30; % [K] temperature of gas channel
 T_L = T_0+30; % [K] temperature of liquid channel
 alpha_CO2 = 0.9999; % [-] mole fraction of carbon dioxide in dry feed gas
@@ -32,6 +32,8 @@ C_ref_CO2 = 1e3; % [mol/m^3] reference aqeuous concentraiton for CO2
 p_ref_H2 = 1; % [atm] reference pressure for H2
 gamma_BV_H = 1; % Proton correction exponent for concentration dependent Butler-Volmer eq
 gamma_BV_CO2 = 1.5; % CO2 correction exponent for concentration dependent Butler-Volmer eq
+Pi_COER = @(T) 0.240*T/298; % [V] Peltier coefficient (irreversible loss) for COER 
+Pi_HER = @(T) 0.013*T/298; % [V] Peltier coefficient (irreversible loss) for HER 
 
 % MATERIAL PARAMETERS
 L = [300 45 10]*1e-6; % [m] gas diffusion electrode domain thicccnesses
@@ -220,7 +222,7 @@ x_CO2 = y( 5,:); j_x_CO2 = y( 6,:);
 x_CO  = y( 7,:); j_x_CO  = y( 8,:);
 x_H2  = y( 9,:); j_x_H2  = y(10,:);
 T     = y(11,:); j_T     = y(12,:);
-phi_e = y(13,:); j_e = y(14,:);
+phi_e = y(13,:); j_e     = y(14,:);
 
 % ZERO-INITIALIZE ALL DERIVATIVES
 z = zeros(size(x));
@@ -241,6 +243,7 @@ switch subdomain
         x_sat = P_sat(T,p_C)./P; % saturation water vapor mole fraction
         s = S_PC(p_C,'GDL',theta_GDL); % [-] liquid saturation fraction of pore space
         S_ec = gamma_ec(x_w,x_sat,s,s_im_GDL,T).*C.*(x_w-x_sat); % water evaporation/condensation reaction rate
+        S_T = -j_e.*dphi_e + H_ec*S_ec; % Joule heating & evaporation-condensation enthalpy
         dp_L = -j_L./((rho_w/M_w).*kappa_L_eff(kappa_L_GDL,p_C,'GDL',theta_GDL)./mu(T)); % liquid water flux: j_L = -rho_L*(kappa_L/mu_L)*grad(p_L)
         dx_w = d_x_SM(C,x_w,j_x_w,[x_CO2;x_CO;x_H2],[j_x_CO2;j_x_CO;j_x_H2],[D_H2O_CO2(eps_p_GDL,tau_GDL,s,T);D_H2O_CO(eps_p_GDL,tau_GDL,s,T);D_H2O_H2(eps_p_GDL,tau_GDL,s,T)]);     
         dx_CO2 = d_x_SM(C,x_CO2,j_x_CO2,[x_w;x_CO;x_H2],[j_x_w;j_x_CO;j_x_H2],[D_H2O_CO2(eps_p_GDL,tau_GDL,s,T);D_CO_CO2(eps_p_GDL,tau_GDL,s,T);D_H2_CO2(eps_p_GDL,tau_GDL,s,T)]);     
@@ -250,7 +253,7 @@ switch subdomain
         dphi_e = -j_e/sigma_e_GDL; % electron flux: j_e = -sigma_e*grad(phi_e)
         dj_L = S_ec; % conservation of liquid water: div(j_L) = S_L
         dj_x_w = -S_ec; % conservation of water vapor: div(j_H2O_g) = S_H2O
-        dj_T = H_ec*S_ec; % conservation of heat: div(j_T) = S_T
+        dj_T = S_T; % conservation of heat: div(j_T) = S_T
     case 2 % MICROPOROUS LAYER
         p_G = P; % [Pa] gas phase absolute pressure (isobaric)
         p_C = p_L - p_G; % [Pa] capillary pressure
@@ -258,6 +261,7 @@ switch subdomain
         x_sat = P_sat(T,p_C)./P; % saturation water vapor mole fraction
         s = S_PC(p_C,'MPL',theta_MPL); % [-] liquid saturation fraction of pore space
         S_ec = gamma_ec(x_w,x_sat,s,s_im_MPL,T).*C.*(x_w-x_sat); % water evaporation/condensation reaction rate
+        S_T = -j_e.*dphi_e + H_ec*S_ec; % Joule heating & evaporation-condensation enthalpy
         dp_L = -j_L./((rho_w/M_w).*kappa_L_eff(kappa_L_MPL,p_C,'MPL',theta_MPL)./mu(T)); % liquid water flux: j_L = -rho_L*(kappa_L/mu_L)*grad(p_L)
         dx_w = d_x_SM(C,x_w,j_x_w,[x_CO2;x_CO;x_H2],[j_x_CO2;j_x_CO;j_x_H2],[D_H2O_CO2(eps_p_MPL,tau_MPL,s,T);D_H2O_CO(eps_p_MPL,tau_MPL,s,T);D_H2O_H2(eps_p_MPL,tau_MPL,s,T)]);     
         dx_CO2 = d_x_SM(C,x_CO2,j_x_CO2,[x_w;x_CO;x_H2],[j_x_w;j_x_CO;j_x_H2],[D_H2O_CO2(eps_p_MPL,tau_MPL,s,T);D_CO_CO2(eps_p_MPL,tau_MPL,s,T);D_H2_CO2(eps_p_MPL,tau_MPL,s,T)]);     
@@ -267,7 +271,7 @@ switch subdomain
         dphi_e = -j_e/sigma_e_MPL; % electron flux: j_e = -sigma_e*grad(phi_e)
         dj_L = S_ec; % conservation of liquid water: div(j_L) = S_L
         dj_x_w = -S_ec; % conservation of water vapor: div(j_H2O_g) = S_H2O
-        dj_T = H_ec*S_ec; % conservation of heat: div(j_T) = S_T
+        dj_T = S_T; % conservation of heat: div(j_T) = S_T
     case 3 % CATALYST LAYER
         p_G = P; % [Pa] gas phase absolute pressure (isobaric)
         p_C = p_L - p_G; % [Pa] capillary pressure
@@ -284,6 +288,8 @@ switch subdomain
         S_CO2 = -a_CCL*i_COER/(2*F); % carbon dioxide reaction rate (Faraday's law)
         S_CO = a_CCL*i_COER/(2*F); % carbon monoxide reaction rate (Faraday's law)
         S_H2 = a_CCL*i_HER/(2*F); % hydrogen reaction rate (Faraday's law)
+        S_T = -j_e.*dphi_e -a_CCL*i_COER.*(eta_COER+Pi_COER(T))-a_CCL*i_HER.*(eta_HER+Pi_HER(T)) + H_ec*S_ec; % Joule+Peltier heating & evaporation-condensation enthalpy
+        S_e = -a_CCL*(i_COER+i_HER);
         dp_L = -j_L./((rho_w/M_w).*kappa_L_eff(kappa_L_CL,p_C,'CL',theta_CL)./mu(T)); % liquid water flux: j_L = -rho_L*(kappa_L/mu_L)*grad(p_L)
         dx_w = d_x_SM(C,x_w,j_x_w,[x_CO2;x_CO;x_H2],[j_x_CO2;j_x_CO;j_x_H2],[D_H2O_CO2(eps_p_CL,tau_CL,s,T);D_H2O_CO(eps_p_CL,tau_CL,s,T);D_H2O_H2(eps_p_CL,tau_CL,s,T)]);     
         dx_CO2 = d_x_SM(C,x_CO2,j_x_CO2,[x_w;x_CO;x_H2],[j_x_w;j_x_CO;j_x_H2],[D_H2O_CO2(eps_p_CL,tau_CL,s,T);D_CO_CO2(eps_p_CL,tau_CL,s,T);D_H2_CO2(eps_p_CL,tau_CL,s,T)]);     
@@ -296,8 +302,8 @@ switch subdomain
         dj_x_CO2 = S_CO2; % conservation of carbon dioxide gas: div(j_CO2) = S_CO2
         dj_x_CO = S_CO; % conservation of carbon monoxide gas: div(j_CO) = S_CO
         dj_x_H2 = S_H2; % conservation of hydrogen gas: div(j_CO) = S_CO
-        dj_T = H_ec*S_ec; % conservation of heat: div(j_T) = S_T
-        dj_e = -a_CCL*(i_COER+i_HER); % conservation of electrons: div(j_e) = S_e
+        dj_T = S_T; % conservation of heat: div(j_T) = S_T
+        dj_e = S_e; % conservation of electrons: div(j_e) = S_e
 end
 
 % ASSEMBLE DERIVATIVES
