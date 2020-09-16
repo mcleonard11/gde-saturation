@@ -1,4 +1,4 @@
-function [sol] = satGDE1D
+function [UI, SOL] = satGDE1D
 
 % CONSTANTS
 M_w = 18e-3; % [kg/mol] molar mass of water
@@ -11,7 +11,7 @@ T_ref = T_0+25; % [K] reference temperature
 
 % OPERATING CONDITIONS
 P = 1.5e5; % [Pa] total pressure in gas channel
-RH = 1.0; % [-] relative humidity in gas channel
+RH = 0.90; % [-] relative humidity in gas channel
 p_C_GC = 0; % [Pa] capillary pressure at GDL/GC interface
 p_C_LC = 100; % [Pa] capillary pressure at Liquid channel interface
 T_C = T_0+30; % [K] temperature of gas channel
@@ -19,9 +19,19 @@ T_L = T_0+30; % [K] temperature of liquid channel
 alpha_CO2 = 0.9999; % [-] mole fraction of carbon dioxide in dry feed gas
 alpha_CO = 0.00005; % [-] mole fraction of carbon monoxide in dry feed gas
 alpha_H2 = 0.00005; % [-] mole fraction of hydrogen in dry feed gas
+U = [0:-0.025:-0.75]; % [V] applied voltage at current collector
 
-N_w = 0.0; % [mol/(m^2*s)] water injection flux through CL
-i = [0:2:20]'; % [A/m^2] current density
+% ELECTROCHEMICAL PARAMETERS
+i_0_COER = @(T) 7.25e9.*exp(-100e3/R./T); % [A/m^2] exchange current density of COER (alkaline)
+i_0_HER = @(T,pH) 8.84e7.*exp(-(83+1.*pH)*1e3/R./T); % [A/m^2] exchange current density of HER (alkaline)
+beta_COER = 1; % [-] COER symmetry factor
+beta_HER = 0.44; % [-] HER symmetry factor
+U_0_COER = -0.11; % [V] COER standard electrode potential relative to SHE
+U_0_HER = 0; % [V] HER standard electrode potential relative to SHE
+C_ref_CO2 = 1e3; % [mol/m^3] reference aqeuous concentraiton for CO2
+p_ref_H2 = 1; % [atm] reference pressure for H2
+gamma_BV_H = 1; % Proton correction exponent for concentration dependent Butler-Volmer eq
+gamma_BV_CO2 = 1.5; % CO2 correction exponent for concentration dependent Butler-Volmer eq
 
 % MATERIAL PARAMETERS
 L = [300 45 10]*1e-6; % [m] gas diffusion electrode domain thicccnesses
@@ -30,6 +40,9 @@ H_ec = 42e3; % [J/mol] molar enthalphy of evaporation/condensation
 k_GDL = 1.2; % [W/(m*K)] thermal conductivity of GDL
 k_MPL = 0.2; % [W/(m*K)] thermal conductivity of MPL
 k_CL = 0.27; % [W/(m*K)] thermal conductivity of CL
+sigma_e_GDL = 1250; % [S/m] electrical conductivity of GDL
+sigma_e_MPL = 1250/6; % [S/m] electrical conductivity of GDL (ASSUMED FOR NOW)
+sigma_e_CL = 350; % [S/m] electrical conductivity of CL
 s_im_GDL = 0.05; % [-] immobile liquid water saturation of GDL
 s_im_MPL = 1e-9; % [-] immobile liquid water saturation of MPL
 s_im_CL = 0.05; % [-] immobile liquid water saturation of CL
@@ -70,6 +83,7 @@ D_H2_CO_ref = D_ab(nu_p_CO,nu_p_H2,M_CO,M_H2,P_ref,T_ref); % [m^2/s] reference d
 D_H2_CO2_ref = D_ab(nu_p_CO2,nu_p_H2,M_CO2,M_H2,P_ref,T_ref); % [m^2/s] reference diffusion coefficient, CO2 in H2 
 
 % MODEL PARAMETERIZATION
+BV = @(i_0,c,c_ref,gamma,beta,T,eta) i_0.*(c./c_ref).^gamma.*exp(-beta*F./(R.*T).*eta); % [A/m^2] Butler-Volmer eq
 D = @(eps_p,tau,s,P,T) eps_p/tau^2*(1-s).^3.*(T/T_ref).^1.5*(P_ref/P); % [-] scaling factor for gas diffusivities
 D_H2O_CO2 = @(eps_p,tau,s,T) D_H2O_CO2_ref*D(eps_p,tau,s,P,T); % [m^2/s] H2O-CO2 gas phase binary diffusion coefficient
 D_H2O_CO = @(eps_p,tau,s,T) D_H2O_CO_ref*D(eps_p,tau,s,P,T); % [m^2/s] H2O-CO gas phase binary diffusion coefficient
@@ -104,13 +118,15 @@ sol = bvpinit(x, @yinit);
 options = bvpset('Vectorized', 'on', 'NMax', 1e3, 'RelTol', 1e-4, 'AbsTol', 1e-6);
 
 % PARAMETER SWEEP
-SOL = cell(size(i));
-Np = numel(i); % number of parameters in the sweep
+SOL = cell(size(U));
+Np = numel(U); % number of parameters in the sweep
 Neq = size(sol.y,1)/2; % number of 2nd-order differential equations
 for k = 1:Np
-    sol = bvp4c(@odefun, @(ya,yb) bcfun(ya, yb, i(k)), sol, options);
+    sol = bvp4c(@odefun, @(ya,yb) bcfun(ya, yb, U(k)), sol, options);
     SOL{k} = sol;
+    I(k) = sol.y(14,1)/10; % current density in [mA/cm^2]
 end
+UI = [U(:) I(:)];
 % POSTPROCESSING
 Nref = 2; % number of refinements for smoother curve plotting
 domains = [1 1 1;
@@ -118,13 +134,8 @@ domains = [1 1 1;
            1 1 1;
            1 1 1;
            1 1 1;
+           1 1 1;
            1 1 1];
-% domains = [1 1;
-%            1 1;
-%            1 1;
-%            1 1;
-%            1 1;
-%            1 1];
 shift = 1e-10;
 for k = 1:Np
     x = [];
@@ -145,23 +156,20 @@ end
 
 % PLOT SOLUTION
 fig_names = {'Potentials', 'Fluxes'};
-unit_scale = [1 1 1 1 1 1;
-              1 1 1 1 1 1;
-              1 1 1 1 1 1];
-% unit_scale = [1 1 1 1 1 1;
-%               1 1 1 1 1 1];
-quantity = {'{\itp}_L','{\itx}_{H_2O}','{\itx}_{CO_2}','{\itx}_{CO}','{\itx}_{H_2}','{\itT}';
-            '{\itj}_L','{\itj}_{H2O}','{\itj}_{CO_2}','{\itj}_{CO}','{\itj}_{H_2}','{\itj}_{T}'};
+unit_scale = [1e-3 1 1 1 1 1 1;
+              1 1 1 1 1 1 0.1];
+quantity = {'{\itp}_L [kPa]','{\itx}_{H_2O}','{\itx}_{CO_2}','{\itx}_{CO}','{\itx}_{H_2}','{\itT}','{\it\phi}_e [V]';
+            '{\itj}_L','{\itj}_{H2O}','{\itj}_{CO_2}','{\itj}_{CO}','{\itj}_{H_2}','{\itj}_{T}','{\itj}_e [mA/cm^2]'};
 c = winter(Np);
 for m = 1:2
     figure('Name', fig_names{m})
     for n = 1:Neq
-        subplot(3,2,n)
+        subplot(4,2,n)
         box on
         hold on
         us = unit_scale(m,n);
         for k = 1:Np
-            plot(SOL{k}.x*1e6, SOL{k}.y(2*(n-1)+m,:)*us, 'Color', c(k,:), 'DisplayName', [num2str(i(k)),' A/m^2'])
+            plot(SOL{k}.x*1e6, SOL{k}.y(2*(n-1)+m,:)*us, 'Color', c(k,:), 'DisplayName', [num2str(U(k)),' V'])
         end
         xlim([Lsum(find(domains(n,:),1,'first')) Lsum(find(domains(n,:),1,'last')+1)]*1e6)
         ylim(ylim)
@@ -172,8 +180,14 @@ for m = 1:2
             set(get(get(l, 'Annotation'), 'LegendInformation'), 'IconDisplayStyle', 'off')
         end
     end
-%     legend(strcat(cellstr(num2str(i)),' A/m^2'),'Location','best');
 end
+
+% PLOT POLARIZATION CURVE
+figure('Name', 'Polarization curve')
+fnplt(cscvn([U; I]))
+xlabel({'Cell voltage [V]'})
+ylabel('Current density [mA/cm^2]')
+set(gca,'XDir','reverse');
 
 % PLOT CAPILLARY PRESSURE PROFILE
 figure('Name','Capillary Pressure')
@@ -206,6 +220,7 @@ x_CO2 = y( 5,:); j_x_CO2 = y( 6,:);
 x_CO  = y( 7,:); j_x_CO  = y( 8,:);
 x_H2  = y( 9,:); j_x_H2  = y(10,:);
 T     = y(11,:); j_T     = y(12,:);
+phi_e = y(13,:); j_e = y(14,:);
 
 % ZERO-INITIALIZE ALL DERIVATIVES
 z = zeros(size(x));
@@ -215,6 +230,7 @@ dx_CO2 = z; dj_x_CO2 = z;
 dx_CO  = z; dj_x_CO  = z;
 dx_H2  = z; dj_x_H2  = z;
 dT     = z; dj_T     = z;
+dphi_e = z; dj_e     = z;
 
 % COMPUTE DERIVATIVES
 switch subdomain
@@ -231,6 +247,7 @@ switch subdomain
         dx_CO = d_x_SM(C,x_CO,j_x_CO,[x_w;x_CO2;x_H2],[j_x_w;j_x_CO2;j_x_H2],[D_H2O_CO(eps_p_GDL,tau_GDL,s,T);D_CO_CO2(eps_p_GDL,tau_GDL,s,T);D_H2_CO(eps_p_GDL,tau_GDL,s,T)]);
         dx_H2 = d_x_SM(C,x_H2,j_x_H2,[x_w;x_CO2;x_CO],[j_x_w;j_x_CO2;j_x_CO],[D_H2O_H2(eps_p_GDL,tau_GDL,s,T);D_H2_CO2(eps_p_GDL,tau_GDL,s,T);D_H2_CO(eps_p_GDL,tau_GDL,s,T)]);
         dT = -j_T/k_GDL; % heat flux: j_T = -k*grad(T)
+        dphi_e = -j_e/sigma_e_GDL; % electron flux: j_e = -sigma_e*grad(phi_e)
         dj_L = S_ec; % conservation of liquid water: div(j_L) = S_L
         dj_x_w = -S_ec; % conservation of water vapor: div(j_H2O_g) = S_H2O
         dj_T = H_ec*S_ec; % conservation of heat: div(j_T) = S_T
@@ -247,6 +264,7 @@ switch subdomain
         dx_CO = d_x_SM(C,x_CO,j_x_CO,[x_w;x_CO2;x_H2],[j_x_w;j_x_CO2;j_x_H2],[D_H2O_CO(eps_p_MPL,tau_MPL,s,T);D_CO_CO2(eps_p_MPL,tau_MPL,s,T);D_H2_CO(eps_p_MPL,tau_MPL,s,T)]);
         dx_H2 = d_x_SM(C,x_H2,j_x_H2,[x_w;x_CO2;x_CO],[j_x_w;j_x_CO2;j_x_CO],[D_H2O_H2(eps_p_MPL,tau_MPL,s,T);D_H2_CO2(eps_p_MPL,tau_MPL,s,T);D_H2_CO(eps_p_MPL,tau_MPL,s,T)]);
         dT = -j_T/k_MPL; % heat flux: j_T = -k*grad(T)
+        dphi_e = -j_e/sigma_e_MPL; % electron flux: j_e = -sigma_e*grad(phi_e)
         dj_L = S_ec; % conservation of liquid water: div(j_L) = S_L
         dj_x_w = -S_ec; % conservation of water vapor: div(j_H2O_g) = S_H2O
         dj_T = H_ec*S_ec; % conservation of heat: div(j_T) = S_T
@@ -257,22 +275,29 @@ switch subdomain
         x_sat = P_sat(T,p_C)./P; % saturation water vapor mole fraction
         s = S_PC(p_C,'CL',theta_CL); % [-] liquid saturation fraction of pore space
         S_ec = gamma_ec(x_w,x_sat,s,s_im_CL,T).*C.*(x_w-x_sat); % evaporation/condensation reaction rate
-        S_H2O = -ones(size(x_w))*a_CCL*i(k)/(2*F); % water reaction rate (Faraday's law)
-        S_CO2 = -ones(size(x_CO2))*a_CCL*i(k)/(2*F); % carbon dioxide reaction rate (Faraday's law)
-        S_CO = 0.5*ones(size(x_CO))*a_CCL*i(k)/(2*F); % carbon monoxide reaction rate (Faraday's law)
-        S_H2 = 0.5*ones(size(x_H2))*a_CCL*i(k)/(2*F); % hydrogen reaction rate (Faraday's law)
+        C_AQ_CO2 = (P/P_ref)*x_CO2*34; % [mol/m^3] Equilibrium dissolved carbon dioxide concentration at 298.15 K, 1 atm [Henry's law]
+        eta_COER = iff((phi_e-U_0_COER)>0,0,phi_e-U_0_COER); % COER overpotential
+        eta_HER = iff((phi_e-U_0_HER)>0,0,phi_e-U_0_HER); % HER overpotential
+        i_COER = BV(i_0_COER(T),C_AQ_CO2,C_ref_CO2,gamma_BV_CO2,beta_COER,T,eta_COER); % COER electrochemical reaction rate
+        i_HER = BV(i_0_HER(T,10),p_ref_H2,p_ref_H2,gamma_BV_H,beta_HER,T,eta_HER); % HER electrochemical reaction rate
+        S_H2O = -a_CCL*(i_COER/(2*F)+i_HER/F); % liquid water reaction rate (Faraday's law)
+        S_CO2 = -a_CCL*i_COER/(2*F); % carbon dioxide reaction rate (Faraday's law)
+        S_CO = a_CCL*i_COER/(2*F); % carbon monoxide reaction rate (Faraday's law)
+        S_H2 = a_CCL*i_HER/(2*F); % hydrogen reaction rate (Faraday's law)
         dp_L = -j_L./((rho_w/M_w).*kappa_L_eff(kappa_L_CL,p_C,'CL',theta_CL)./mu(T)); % liquid water flux: j_L = -rho_L*(kappa_L/mu_L)*grad(p_L)
         dx_w = d_x_SM(C,x_w,j_x_w,[x_CO2;x_CO;x_H2],[j_x_CO2;j_x_CO;j_x_H2],[D_H2O_CO2(eps_p_CL,tau_CL,s,T);D_H2O_CO(eps_p_CL,tau_CL,s,T);D_H2O_H2(eps_p_CL,tau_CL,s,T)]);     
         dx_CO2 = d_x_SM(C,x_CO2,j_x_CO2,[x_w;x_CO;x_H2],[j_x_w;j_x_CO;j_x_H2],[D_H2O_CO2(eps_p_CL,tau_CL,s,T);D_CO_CO2(eps_p_CL,tau_CL,s,T);D_H2_CO2(eps_p_CL,tau_CL,s,T)]);     
         dx_CO = d_x_SM(C,x_CO,j_x_CO,[x_w;x_CO2;x_H2],[j_x_w;j_x_CO2;j_x_H2],[D_H2O_CO(eps_p_CL,tau_CL,s,T);D_CO_CO2(eps_p_CL,tau_CL,s,T);D_H2_CO(eps_p_CL,tau_CL,s,T)]);
         dx_H2 = d_x_SM(C,x_H2,j_x_H2,[x_w;x_CO2;x_CO],[j_x_w;j_x_CO2;j_x_CO],[D_H2O_H2(eps_p_CL,tau_CL,s,T);D_H2_CO2(eps_p_CL,tau_CL,s,T);D_H2_CO(eps_p_CL,tau_CL,s,T)]);
         dT = -j_T/k_CL; % heat flux: j_T = -k*grad(T)
+        dphi_e = -j_e/sigma_e_CL; % electron flux: j_e = -sigma_e*grad(phi_e)
         dj_L = S_ec + S_H2O; % conservation of liquid water: div(j_L) = S_L
         dj_x_w = -S_ec; % conservation of water vapor: div(j_H2O_v) = S_H2O
         dj_x_CO2 = S_CO2; % conservation of carbon dioxide gas: div(j_CO2) = S_CO2
         dj_x_CO = S_CO; % conservation of carbon monoxide gas: div(j_CO) = S_CO
         dj_x_H2 = S_H2; % conservation of hydrogen gas: div(j_CO) = S_CO
         dj_T = H_ec*S_ec; % conservation of heat: div(j_T) = S_T
+        dj_e = -a_CCL*(i_COER+i_HER); % conservation of electrons: div(j_e) = S_e
 end
 
 % ASSEMBLE DERIVATIVES
@@ -281,7 +306,8 @@ dydx = [dp_L   ; dj_L    ;
         dx_CO2 ; dj_x_CO2;
         dx_CO  ; dj_x_CO ;
         dx_H2  ; dj_x_H2 ;
-        dT     ; dj_T    ];
+        dT     ; dj_T    ;
+        dphi_e ; dj_e    ];
 end
 
 function y0 = yinit(x, subdomain)
@@ -292,6 +318,7 @@ x_CO2 = x_CO2_GC;
 x_CO = x_CO_GC;
 x_H2 = x_H2_GC;
 T = T_C;
+phi_e = U(1);
 
 % ALL FLUXES ARE INITIALLY ZERO
 y0 = [p_L   ; 0 ; 
@@ -299,10 +326,11 @@ y0 = [p_L   ; 0 ;
       x_CO2 ; 0 ;
       x_CO  ; 0 ;
       x_H2  ; 0 ;      
-      T     ; 0 ;];
+      T     ; 0 ;
+      phi_e ; 0 ];
 end
 
-function res = bcfun(ya, yb, i)
+function res = bcfun(ya, yb, U)
 
 res = ya(:); % homogeneous BC everywhere by default
 
@@ -355,6 +383,14 @@ for d = 2:Nd
     res(2*(d-1)*Neq+11) = ya(11,d) - yb(11,d-1); % potential continuity
     res(2*(d-1)*Neq+12) = ya(12,d) - yb(12,d-1); % flux continuity
 end
+
+% ELECTRONS
+res(0*Neq+13) = ya(13,1) - U; % current collector electrical potential
+res(0*Neq+14) = yb(14,1) - ya(14,2); % flux continuity between GDL & MPL
+res(2*Neq+13) = yb(13,1) - ya(13,2); % potential continuity between GDL & MPL
+res(2*Neq+14) = yb(14,2) - ya(14,3); % flux continuity between MPL & CL
+res(4*Neq+13) = yb(13,2) - ya(13,3); % potential continuity between MPL & CL
+res(4*Neq+14) = yb(14,3); % zero flux at boundary
     
 end
 
