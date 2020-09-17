@@ -11,7 +11,7 @@ T_ref = T_0+25; % [K] reference temperature
 
 % OPERATING CONDITIONS
 P = 1.5e5; % [Pa] total pressure in gas channel
-RH = 0.90; % [-] relative humidity in gas channel
+RH = 0.9; % [-] relative humidity in gas channel
 p_C_GC = 0; % [Pa] capillary pressure at GDL/GC interface
 p_C_LC = 500; % [Pa] capillary pressure at Liquid channel interface
 T_C = T_0+30; % [K] temperature of gas channel
@@ -36,7 +36,7 @@ Pi_COER = @(T) 0.240*T/298; % [V] Peltier coefficient (irreversible loss) for CO
 Pi_HER = @(T) 0.013*T/298; % [V] Peltier coefficient (irreversible loss) for HER 
 
 % MATERIAL PARAMETERS
-L = [300 45 10]*1e-6; % [m] gas diffusion electrode domain thicccnesses
+L = [300 45 5]*1e-6; % [m] gas diffusion electrode domain thicccnesses
 a_CCL = 1e7; % [m^2/m^3] ECSA density of CCL
 H_ec = 42e3; % [J/mol] molar enthalphy of evaporation/condensation
 k_GDL = 1.2; % [W/(m*K)] thermal conductivity of GDL
@@ -45,12 +45,12 @@ k_CL = 0.27; % [W/(m*K)] thermal conductivity of CL
 sigma_e_GDL = 1250; % [S/m] electrical conductivity of GDL
 sigma_e_MPL = 1250/6; % [S/m] electrical conductivity of GDL (ASSUMED FOR NOW)
 sigma_e_CL = 350; % [S/m] electrical conductivity of CL
-s_im_GDL = 0.05; % [-] immobile liquid water saturation of GDL
+s_im_GDL = 1e-9; % [-] immobile liquid water saturation of GDL
 s_im_MPL = 1e-9; % [-] immobile liquid water saturation of MPL
-s_im_CL = 0.05; % [-] immobile liquid water saturation of CL
+s_im_CL = 1e-9; % [-] immobile liquid water saturation of CL
 eps_p_GDL = 0.7; % [-] porosity of GDL
 eps_p_MPL = 0.3; % [-] porosity of MPL
-eps_p_CL = 0.4; % [-] porosity of CL
+eps_p_CL = 0.42; % [-] porosity of CL
 kappa_L_GDL = 0.8e-11; % [m^2] absolute permeability of GDL
 kappa_L_MPL = 5e-14; % [m^2] absolute permeability of MPL
 kappa_L_CL = 1e-13; % [m^2] absolute permeability of CL
@@ -59,7 +59,7 @@ tau_MPL = 1.6; % [-] pore tortuosity of MPL
 tau_CL = 1.6; % [-] pore tortuosity of CL
 theta_GDL = 93; % [°] intrinsic mean contact angle of GDL
 theta_MPL = 110; % [°] intrinsic mean contact angle of MPL
-theta_CL = 93; % [°] intrinsic mean contact angle of CL
+theta_CL = 84; % [°] intrinsic mean contact angle of CL
 
 % WATER CONSTITUTIVE RELATIONSHIPS
 P_sat_o = @(T) exp(23.1963-3816.44./(T-46.13)); % [Pa] uncorrected saturation pressure of water vapor
@@ -103,8 +103,10 @@ iff = @(cond,a,b) cond.*a + ~cond.*b; % vectorized ternary operator
 
 % MATERIAL CONSTITUTIVE RELATIONSHIPS
 load('GDE_PC_(GDL-Toray)(MPL)(CL)','GDE')
-S_PC = @(P_C,layer,theta) interp2(GDE.(layer).PC , GDE.(layer).theta, GDE.(layer).S , P_C, theta);
-kappa_L_eff = @(kappa,P_C,layer,theta) kappa*(1e-5+interp2(GDE.(layer).PC, GDE.(layer).theta, GDE.(layer).kappa_r_L, P_C, theta)); 
+% S_PC = @(P_C,layer,theta) interp2(GDE.(layer).PC , GDE.(layer).theta, GDE.(layer).S , P_C, theta);
+% kappa_L_eff = @(kappa,P_C,layer,theta) kappa*(1e-5+interp2(GDE.(layer).PC, GDE.(layer).theta, GDE.(layer).kappa_r_L, P_C, theta)); 
+S_PC = @(P_C,layer,theta) interp1(GDE.(layer).PC, GDE.(layer).S(1,:) , P_C);
+kappa_L_eff = @(kappa,P_C,layer,theta) kappa*(1e-5+interp1(GDE.(layer).PC, GDE.(layer).kappa_r_L(1,:), P_C)); 
 r_K = @(P_C,layer,theta) (1e-6+interp2(GDE.(layer).PC, GDE.(layer).theta, GDE.(layer).r_K, P_C, theta)); % [m] Radius for Knudsen diffusion
 s_red = @(s,s_im) (s-s_im)/(1-s_im); % reduced liquid water saturation
 gamma_ec = @(x_H2O,x_sat,s,s_im,T) 2e6*iff(x_H2O<x_sat,5e-4*s_red(s,s_im),6e-3*(1-s_red(s,s_im))).*sqrt(R*T/(2*pi*M_w)); % [1/s] evaporation/condensation rate
@@ -283,7 +285,7 @@ switch subdomain
         eta_COER = iff((phi_e-U_0_COER)>0,0,phi_e-U_0_COER); % COER overpotential
         eta_HER = iff((phi_e-U_0_HER)>0,0,phi_e-U_0_HER); % HER overpotential
         i_COER = BV(i_0_COER(T),C_AQ_CO2,C_ref_CO2,gamma_BV_CO2,beta_COER,T,eta_COER); % COER electrochemical reaction rate
-        i_HER = BV(i_0_HER(T,10),p_ref_H2,p_ref_H2,gamma_BV_H,beta_HER,T,eta_HER); % HER electrochemical reaction rate
+        i_HER = BV(i_0_HER(T,14),p_ref_H2,p_ref_H2,gamma_BV_H,beta_HER,T,eta_HER); % HER electrochemical reaction rate
         S_H2O = -a_CCL*(i_COER/(2*F)+i_HER/F); % liquid water reaction rate (Faraday's law)
         S_CO2 = -a_CCL*i_COER/(2*F); % carbon dioxide reaction rate (Faraday's law)
         S_CO = a_CCL*i_COER/(2*F); % carbon monoxide reaction rate (Faraday's law)
