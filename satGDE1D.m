@@ -41,6 +41,8 @@ Pi_HER = @(T) 0.013*T/298; % [V] Peltier coefficient (irreversible loss) for HER
 % MATERIAL PARAMETERS
 L = [300 45 5]*1e-6; % [m] gas diffusion electrode domain thicccnesses
 a_CCL = @(s) 1e7.*s; % [m^2/m^3] ECSA density of CCL
+a_PT = @(s) 2e6.*s; % [m^2/m^3] surface area per volume for gas-liquid exchange
+k_GL = 0.1; % [m/s] % gas-liquid mass transport coefficient (Weng et al. 2018)
 H_ec = 42e3; % [J/mol] molar enthalphy of evaporation/condensation
 k_GDL = 1.2; % [W/(m*K)] thermal conductivity of GDL ????????????????????????
 k_MPL = 0.2; % [W/(m*K)] thermal conductivity of MPL ????????????????????????
@@ -337,23 +339,13 @@ switch subdomain
         x_sat = P_sat(T,p_C)./P; % saturation water vapor mole fraction
         s = S_PC(p_C,'CL',theta_CL); % [-] liquid saturation fraction of pore space
         S_ec = gamma_ec(x_w,x_sat,s,s_im_CL,T).*C.*(x_w-x_sat); % evaporation/condensation reaction rate
-        
-%         C_OH = C_OH/1000;
-        
-        k_GL = 0.1; % [m/s] 
-        S_pt_CO2 = (2e6 .* s) .* k_GL .* (H_CO2(T).*p_G.*x_CO2 - C_CO2_L); % homogeneous mass transfer of carbon dioxide between gas and liquid phases
+        S_pt_CO2 = a_PT(s) .* k_GL .* (H_CO2(T).*p_G.*x_CO2 - C_CO2_L); % homogeneous mass transfer of carbon dioxide between gas and liquid phases
         S_h_3_f = k3f*C_CO2_L.*C_OH; % ????? do these need to be saturation corrected?
         S_h_4_f = k4f*C_HCO3.*C_OH; % ????? do these need to be saturation corrected?
         S_h_3_r = k3r(T).*C_HCO3; % REVERSE REACTION = COULD CAUSE ISSUES ????? do these need to be saturation corrected?
         S_h_4_r = k4r(T).*C_CO3; % REVERSE REACTION = COULD CAUSE ISSUES ????? do these need to be saturation corrected?
-        
-        S_h_3_NET = S_h_3_f - S_h_3_r;
-        S_h_4_NET = S_h_4_f - S_h_4_r;
-        
-        pOH = -(reallog(C_OH)/reallog(10));
+        pOH = -(reallog(C_OH)/reallog(10)); % electrolyte pOH
         pH = -log10(Kw(T))-pOH; % electrolyte pH as a function of temperature
-%         pH = 14-(-log10(C_OH/1e3)); % electrolyte pH
-%         pH = -log10(C_OH_b);
         eta_COER = iff((phi_e-U_0_COER)>0,0,phi_e-U_0_COER); % COER overpotential
         eta_HER = iff((phi_e-U_0_HER)>0,0,phi_e-U_0_HER); % HER overpotential
         i_COER = BV(i_0_COER(T),C_CO2_L,C_ref_CO2,gamma_BV_CO2,beta_COER,T,eta_COER); % COER electrochemical reaction rate
@@ -364,12 +356,10 @@ switch subdomain
         S_H2 = a_CCL(s).*i_HER/(2*F); % hydrogen reaction rate (Faraday's law)
         S_T = -j_e.*dphi_e -a_CCL(s).*i_COER.*(eta_COER+Pi_COER(T))-a_CCL(s).*i_HER.*(eta_HER+Pi_HER(T)) + H_ec*S_ec; % Joule+Peltier heating & evaporation-condensation enthalpy
         S_e = -a_CCL(s).*(i_COER+i_HER);       
-        
         S_CO2_L = S_pt_CO2 - a_CCL(s).*i_COER/(2*F) - S_h_3_f + S_h_3_r; % carbon dioxide absorption from gas phase and electrochemical reaction rate (Faraday's law)
         S_OH = a_CCL(s).*(i_COER/F+i_HER/F) - S_h_3_f + S_h_3_r - S_h_4_f + S_h_4_r;
         S_HCO3 = S_h_3_f - S_h_3_r - S_h_4_f + S_h_4_r;
         S_CO3 = S_h_4_f - S_h_4_r;
-        
         dp_L = -j_L./((rho_w/M_w).*kappa_L_eff(kappa_L_CL,p_C,'CL',theta_CL)./mu(T)); % liquid water flux: j_L = -rho_L*(kappa_L/mu_L)*grad(p_L)
         dx_w = d_x_SM(C,x_w,j_x_w,[x_CO2;x_CO;x_H2],[j_x_CO2;j_x_CO;j_x_H2],[D_H2O_CO2(eps_p_CL,tau_CL,s,T);D_H2O_CO(eps_p_CL,tau_CL,s,T);D_H2O_H2(eps_p_CL,tau_CL,s,T)]);     
         dx_CO2 = d_x_SM(C,x_CO2,j_x_CO2,[x_w;x_CO;x_H2],[j_x_w;j_x_CO;j_x_H2],[D_H2O_CO2(eps_p_CL,tau_CL,s,T);D_CO_CO2(eps_p_CL,tau_CL,s,T);D_H2_CO2(eps_p_CL,tau_CL,s,T)]);     
@@ -377,12 +367,10 @@ switch subdomain
         dx_H2 = d_x_SM(C,x_H2,j_x_H2,[x_w;x_CO2;x_CO],[j_x_w;j_x_CO2;j_x_CO],[D_H2O_H2(eps_p_CL,tau_CL,s,T);D_H2_CO2(eps_p_CL,tau_CL,s,T);D_H2_CO(eps_p_CL,tau_CL,s,T)]);
         dT = -j_T/k_CL; % heat flux: j_T = -k*grad(T)
         dphi_e = -j_e/sigma_e_CL; % electron flux: j_e = -sigma_e*grad(phi_e)
-        
         dC_CO2_L = -j_CO2_L./D_CO2_L_eff(eps_p_CL,tau_CL,s,T); % dissolved CO2 flux: j_CO2_L = -D*grad(C_CO2_L)
         dC_OH = -j_OH./D_OH_eff(eps_p_CL,tau_CL,s,T); % dissolved OH flux: j_OH = -D*grad(C_OH)
         dC_HCO3 = -j_HCO3./D_HCO3_eff(eps_p_CL,tau_CL,s,T); % dissolved HCO3 flux: j_HCO3 = -D*grad(C_HCO3)
-        dC_CO3 = -j_CO3./D_CO3_eff(eps_p_CL,tau_CL,s,T); % dissolved CO3 flux: j_CO3 = -D*grad(C_CO3)
-        
+        dC_CO3 = -j_CO3./D_CO3_eff(eps_p_CL,tau_CL,s,T); % dissolved CO3 flux: j_CO3 = -D*grad(C_CO3) 
         dj_L = S_ec + S_H2O; % conservation of liquid water: div(j_L) = S_L
         dj_x_w = -S_ec; % conservation of water vapor: div(j_H2O_v) = S_H2O
         dj_x_CO2 = S_CO2; % conservation of carbon dioxide gas: div(j_CO2) = S_CO2
@@ -390,7 +378,6 @@ switch subdomain
         dj_x_H2 = S_H2; % conservation of hydrogen gas: div(j_CO) = S_CO
         dj_T = S_T; % conservation of heat: div(j_T) = S_T
         dj_e = S_e; % conservation of electrons: div(j_e) = S_e
-        
         dj_CO2_L = S_CO2_L; % conservation of dissolved carbon dioxide: div(j_CO2_L) = S_CO2_L
         dj_OH = S_OH; % conservation of hydroxide anions: div(j_OH) = S_OH
         dj_HCO3 = S_HCO3; % conservation of bicarbonate anions: div(j_CO2_L) = S_HCO3
@@ -421,13 +408,9 @@ x_H2 = x_H2_GC;
 T = T_C;
 phi_e = U(1);
 C_CO2_L = iff(subdomain > 2 , C_CO2_L_b , 0);
-% C_CO2_L = C_CO2_L_b;
 C_OH = iff(subdomain > 2, C_OH_b, 0);
-% C_OH = C_OH_b;
 C_HCO3 = iff(subdomain > 2, C_HCO3_b, 0);
-% C_HCO3 = C_HCO3_b;
 C_CO3 = iff(subdomain > 2, C_CO3_b, 0);
-% C_CO3 = C_CO3_b;
 
 % ALL FLUXES ARE INITIALLY ZERO
 y0 = [p_L     ; 0 ; 
@@ -506,42 +489,18 @@ res(4*Neq+13) = yb(13,2) - ya(13,3); % potential continuity between MPL & CL
 res(4*Neq+14) = yb(14,3); % zero flux at boundary
     
 % CARBON DIOXIDE DISSOLVED IN LIQUID
-% res(0*Neq+15) = ya(15,1) - (H_CO2(T_C)*P*x_CO2_GC); % Dissolved CO2 concentration at GC interface
-% res(0*Neq+16) = yb(16,1) - ya(16,2); % flux continuity between GDL & MPL
-% res(2*Neq+15) = yb(15,1) - ya(15,2); % potential continuity between GDL & MPL
-% res(2*Neq+16) = yb(16,2) - ya(16,3); % flux continuity between MPL & CL
-% res(4*Neq+15) = yb(15,2) - ya(15,3); % potential continuity between MPL & CL
-
 res(4*Neq+15) = yb(15,3) - C_CO2_L_b; % Dissolved CO2 concentration in bulk electrolyte
 res(4*Neq+16) = ya(16,3); % zero flux at boundary
 
 % HYDROXIDE ANIONS
-% res(0*Neq+17) = ya(18,1); % no flux at boundary
-% res(0*Neq+18) = yb(18,1) - ya(18,2); % flux continuity between GDL & MPL
-% res(2*Neq+17) = yb(17,1) - ya(17,2); % potential continuity between GDL & MPL
-% res(2*Neq+18) = yb(18,2) - ya(18,3); % flux continuity between MPL & CL
-% res(4*Neq+17) = yb(17,2) - ya(17,3); % potential continuity between MPL & CL
-
 res(4*Neq+17) = yb(17,3) - C_OH_b; % Concentration in bulk electrolyte
 res(4*Neq+18) = ya(18,3); % zero flux at boundary
 
 % BICARBONATE ANIONS
-% res(0*Neq+19) = ya(20,1); % no flux at boundary
-% res(0*Neq+20) = yb(20,1) - ya(20,2); % flux continuity between GDL & MPL
-% res(2*Neq+19) = yb(19,1) - ya(19,2); % potential continuity between GDL & MPL
-% res(2*Neq+20) = yb(20,2) - ya(20,3); % flux continuity between MPL & CL
-% res(4*Neq+19) = yb(19,2) - ya(19,3); % potential continuity between MPL & CL
-
 res(4*Neq+19) = yb(19,3) - C_HCO3_b; % Concentration in bulk electrolyte
 res(4*Neq+20) = ya(20,3); % zero flux at boundary
 
 % CARBONATE DI-ANIONS
-% res(0*Neq+21) = ya(22,1); % no flux at boundary
-% res(0*Neq+22) = yb(22,1) - ya(22,2); % flux continuity between GDL & MPL
-% res(2*Neq+21) = yb(21,1) - ya(21,2); % potential continuity between GDL & MPL
-% res(2*Neq+22) = yb(22,2) - ya(22,3); % flux continuity between MPL & CL
-% res(4*Neq+21) = yb(21,2) - ya(21,3); % potential continuity between MPL & CL
-
 res(4*Neq+21) = yb(21,3) - C_CO3_b; % Concentration in bulk electrolyte
 res(4*Neq+22) = ya(22,3); % zero flux at boundary
 
