@@ -208,9 +208,10 @@ figure('Name','Saturation')
 box on
 hold on
 for k = 1:Np
-    [~,ind] = min(abs(SOL{k}.x(1,:)-Lsum(2)));
-    plot([SOL{k}.x(1,1:ind),SOL{k}.x(1,ind+1:end)]*1e6,...
-        [S_PC(SOL{k}.y(1,1:ind)-P,'GDL',theta_GDL),S_PC(SOL{k}.y(1,ind+1:end)-P,'MPL',theta_MPL)],'Color', c(k,:));
+    [~,ind1] = min(abs(SOL{k}.x(1,:)-Lsum(2)));
+    [~,ind2] = min(abs(SOL{k}.x(1,:)-Lsum(3)));
+    plot([SOL{k}.x(1,1:ind1),SOL{k}.x(1,ind1+1:ind2),SOL{k}.x(1,ind2+1:end)]*1e6,...
+        [S_PC(SOL{k}.y(1,1:ind1)-P,'GDL',theta_GDL),S_PC(SOL{k}.y(1,ind1+1:ind2)-P,'MPL',theta_MPL),S_PC(SOL{k}.y(1,ind2+1:end)-P,'CL',theta_CL)],'Color', c(k,:));
 end
 xlabel('{\itx} [μm]')
 ylabel('Saturation (-)')
