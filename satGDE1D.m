@@ -10,7 +10,7 @@ P_ref = 101325; % [Pa] reference pressure
 T_ref = T_0+25; % [K] reference temperature
 
 % OPERATING CONDITIONS
-P = 1.5e5; % [Pa] total pressure in gas channel
+P_GC = 1.5e5; % [Pa] total pressure in gas channel
 RH = 0.9; % [-] relative humidity in gas channel
 p_C_GC = 0; % [Pa] capillary pressure at GDL/GC interface
 p_C_LC = 500; % [Pa] capillary pressure at Liquid channel interface
@@ -64,7 +64,8 @@ theta_CL = 84; % [°] intrinsic mean contact angle of CL
 % WATER CONSTITUTIVE RELATIONSHIPS
 P_sat_o = @(T) exp(23.1963-3816.44./(T-46.13)); % [Pa] uncorrected saturation pressure of water vapor
 P_sat = @(T,P_C) P_sat_o(T).*exp(P_C.*(M_w/rho_w)./(R.*T)); % [Pa] capillary pressure corrected saturation pressure of water vapor
-mu = @(T) 1e-3*exp(-3.63148+542.05./(T-144.15)); % [Pa*s] dynamic viscosity of liquid water
+mu_L = @(T) 1e-3*exp(-3.63148+542.05./(T-144.15)); % [Pa*s] dynamic viscosity of liquid water
+mu_G = @(T) 1e-5*exp(-3.63148+542.05./(T-144.15)); % [Pa*s] dynamic viscosity of gas
 
 % DIFFUSION COEFFICIENTS (BULK)
 D_ab = @(nu_p_a,nu_p_b,M_a,M_b,P,T) ...
@@ -87,13 +88,13 @@ D_H2_CO2_ref = D_ab(nu_p_CO2,nu_p_H2,M_CO2,M_H2,P_ref,T_ref); % [m^2/s] referenc
 % MODEL PARAMETERIZATION
 BV = @(i_0,c,c_ref,gamma,beta,T,eta) i_0.*(c./c_ref).^gamma.*exp(-beta*F./(R.*T).*eta); % [A/m^2] Butler-Volmer eq
 D = @(eps_p,tau,s,P,T) eps_p/tau^2*(1-s).^3.*(T/T_ref).^1.5*(P_ref/P); % [-] scaling factor for gas diffusivities
-D_H2O_CO2 = @(eps_p,tau,s,T) D_H2O_CO2_ref*D(eps_p,tau,s,P,T); % [m^2/s] H2O-CO2 gas phase binary diffusion coefficient
-D_H2O_CO = @(eps_p,tau,s,T) D_H2O_CO_ref*D(eps_p,tau,s,P,T); % [m^2/s] H2O-CO gas phase binary diffusion coefficient
-D_H2O_H2 = @(eps_p,tau,s,T) D_H2O_H2_ref*D(eps_p,tau,s,P,T); % [m^2/s] H2O-H2 gas phase binary diffusion coefficient
-D_CO_CO2 = @(eps_p,tau,s,T) D_CO_CO2_ref*D(eps_p,tau,s,P,T); % [m^2/s] CO-CO2 gas phase binary diffusion coefficient
-D_H2_CO = @(eps_p,tau,s,T) D_H2_CO_ref*D(eps_p,tau,s,P,T); % [m^2/s] CO-H2 gas phase binary diffusion coefficient
-D_H2_CO2 = @(eps_p,tau,s,T) D_H2_CO2_ref*D(eps_p,tau,s,P,T); % [m^2/s] CO2-H2 gas phase binary diffusion coefficient
-x_H2O_GC = RH*P_sat_o(T_C)/P; % [-] mole fraction of water vapor in gas channel
+D_H2O_CO2 = @(eps_p,tau,s,T) D_H2O_CO2_ref*D(eps_p,tau,s,P_GC,T); % [m^2/s] H2O-CO2 gas phase binary diffusion coefficient
+D_H2O_CO = @(eps_p,tau,s,T) D_H2O_CO_ref*D(eps_p,tau,s,P_GC,T); % [m^2/s] H2O-CO gas phase binary diffusion coefficient
+D_H2O_H2 = @(eps_p,tau,s,T) D_H2O_H2_ref*D(eps_p,tau,s,P_GC,T); % [m^2/s] H2O-H2 gas phase binary diffusion coefficient
+D_CO_CO2 = @(eps_p,tau,s,T) D_CO_CO2_ref*D(eps_p,tau,s,P_GC,T); % [m^2/s] CO-CO2 gas phase binary diffusion coefficient
+D_H2_CO = @(eps_p,tau,s,T) D_H2_CO_ref*D(eps_p,tau,s,P_GC,T); % [m^2/s] CO-H2 gas phase binary diffusion coefficient
+D_H2_CO2 = @(eps_p,tau,s,T) D_H2_CO2_ref*D(eps_p,tau,s,P_GC,T); % [m^2/s] CO2-H2 gas phase binary diffusion coefficient
+x_H2O_GC = RH*P_sat_o(T_C)/P_GC; % [-] mole fraction of water vapor in gas channel
 x_CO2_GC = alpha_CO2*(1-x_H2O_GC); % [-] mole fraction of carbon dioxide in gas channel
 x_CO_GC = alpha_CO*(1-x_H2O_GC); % [-] mole fraction of carbon monoxide in gas channel
 x_H2_GC = alpha_H2*(1-x_H2O_GC); % [-] mole fraction of hydrogen in gas channel
@@ -107,6 +108,7 @@ load('GDE_PC_(GDL-Toray)(MPL)(CL)','GDE')
 % kappa_L_eff = @(kappa,P_C,layer,theta) kappa*(1e-5+interp2(GDE.(layer).PC, GDE.(layer).theta, GDE.(layer).kappa_r_L, P_C, theta)); 
 S_PC = @(P_C,layer,theta) interp1(GDE.(layer).PC, GDE.(layer).S(1,:) , P_C);
 kappa_L_eff = @(kappa,P_C,layer,theta) kappa*(1e-5+interp1(GDE.(layer).PC, GDE.(layer).kappa_r_L(1,:), P_C)); 
+kappa_G_eff = @(kappa,P_C,layer,theta) kappa*(1e-5+interp1(GDE.(layer).PC, GDE.(layer).kappa_r_G(1,:), P_C)); 
 r_K = @(P_C,layer,theta) (1e-6+interp2(GDE.(layer).PC, GDE.(layer).theta, GDE.(layer).r_K, P_C, theta)); % [m] Radius for Knudsen diffusion
 s_red = @(s,s_im) (s-s_im)/(1-s_im); % reduced liquid water saturation
 gamma_ec = @(x_H2O,x_sat,s,s_im,T) 2e6*iff(x_H2O<x_sat,5e-4*s_red(s,s_im),6e-3*(1-s_red(s,s_im))).*sqrt(R*T/(2*pi*M_w)); % [1/s] evaporation/condensation rate
@@ -198,7 +200,7 @@ figure('Name','Capillary Pressure')
 box on
 hold on
 for k = 1:Np
-    plot(SOL{k}.x(1,:)*1e6,SOL{k}.y(1,:)-P,'Color', c(k,:));
+    plot(SOL{k}.x(1,:)*1e6,SOL{k}.y(1,:)-P_GC,'Color', c(k,:));
 end
 xlabel('{\itx} [μm]')
 ylabel('{\itP}_C (Pa)')
@@ -211,7 +213,7 @@ for k = 1:Np
     [~,ind1] = min(abs(SOL{k}.x(1,:)-Lsum(2)));
     [~,ind2] = min(abs(SOL{k}.x(1,:)-Lsum(3)));
     plot([SOL{k}.x(1,1:ind1),SOL{k}.x(1,ind1+1:ind2),SOL{k}.x(1,ind2+1:end)]*1e6,...
-        [S_PC(SOL{k}.y(1,1:ind1)-P,'GDL',theta_GDL),S_PC(SOL{k}.y(1,ind1+1:ind2)-P,'MPL',theta_MPL),S_PC(SOL{k}.y(1,ind2+1:end)-P,'CL',theta_CL)],'Color', c(k,:));
+        [S_PC(SOL{k}.y(1,1:ind1)-P_GC,'GDL',theta_GDL),S_PC(SOL{k}.y(1,ind1+1:ind2)-P_GC,'MPL',theta_MPL),S_PC(SOL{k}.y(1,ind2+1:end)-P_GC,'CL',theta_CL)],'Color', c(k,:));
 end
 xlabel('{\itx} [μm]')
 ylabel('Saturation (-)')
@@ -220,16 +222,18 @@ function dydx = odefun(x, y, subdomain)
 
 % READ POTENTIALS & FLUXES
 p_L   = y( 1,:); j_L     = y( 2,:);
-x_w   = y( 3,:); j_x_w   = y( 4,:);
-x_CO2 = y( 5,:); j_x_CO2 = y( 6,:);
-x_CO  = y( 7,:); j_x_CO  = y( 8,:);
-x_H2  = y( 9,:); j_x_H2  = y(10,:);
-T     = y(11,:); j_T     = y(12,:);
-phi_e = y(13,:); j_e     = y(14,:);
+p_G   = y( 3,:); j_G     = y( 4,:);
+x_w   = y( 5,:); j_x_w   = y( 6,:);
+x_CO2 = y( 7,:); j_x_CO2 = y( 8,:);
+x_CO  = y( 9,:); j_x_CO  = y(10,:);
+x_H2  = y(11,:); j_x_H2  = y(12,:);
+T     = y(13,:); j_T     = y(14,:);
+phi_e = y(15,:); j_e     = y(16,:);
 
 % ZERO-INITIALIZE ALL DERIVATIVES
 z = zeros(size(x));
 dp_L   = z; dj_L     = z;
+dp_G   = z; dj_G     = z;
 dx_w   = z; dj_x_w   = z;
 dx_CO2 = z; dj_x_CO2 = z;
 dx_CO  = z; dj_x_CO  = z;
@@ -240,14 +244,15 @@ dphi_e = z; dj_e     = z;
 % COMPUTE DERIVATIVES
 switch subdomain
     case 1 % GAS DIFFUSION LAYER
-        p_G = P; % [Pa] gas phase absolute pressure (isobaric)
+%         p_G = P; % [Pa] gas phase absolute pressure (isobaric)
         p_C = p_L - p_G; % [Pa] capillary pressure
-        C = P./(R*T); % gas phase density
-        x_sat = P_sat(T,p_C)./P; % saturation water vapor mole fraction
+        C = p_G./(R*T); % gas phase density
+        x_sat = P_sat(T,p_C)./p_G; % saturation water vapor mole fraction
         s = S_PC(p_C,'GDL',theta_GDL); % [-] liquid saturation fraction of pore space
         S_ec = gamma_ec(x_w,x_sat,s,s_im_GDL,T).*C.*(x_w-x_sat); % water evaporation/condensation reaction rate
         S_T = -j_e.*dphi_e + H_ec*S_ec; % Joule heating & evaporation-condensation enthalpy
-        dp_L = -j_L./((rho_w/M_w).*kappa_L_eff(kappa_L_GDL,p_C,'GDL',theta_GDL)./mu(T)); % liquid water flux: j_L = -rho_L*(kappa_L/mu_L)*grad(p_L)
+        dp_L = -j_L./((rho_w/M_w).*kappa_L_eff(kappa_L_GDL,p_C,'GDL',theta_GDL)./mu_L(T)); % liquid water flux: j_L = -rho_L*(kappa_L/mu_L)*grad(p_L)
+        dp_G = -j_G./(C.*kappa_G_eff(kappa_G_GDL,p_C,'GDL',theta_GDL)./mu_G(T)); % gas phase flux: j_G = -rho_G*(kappa/mu_G)*grad(p_G)
         dx_w = d_x_SM(C,x_w,j_x_w,[x_CO2;x_CO;x_H2],[j_x_CO2;j_x_CO;j_x_H2],[D_H2O_CO2(eps_p_GDL,tau_GDL,s,T);D_H2O_CO(eps_p_GDL,tau_GDL,s,T);D_H2O_H2(eps_p_GDL,tau_GDL,s,T)]);     
         dx_CO2 = d_x_SM(C,x_CO2,j_x_CO2,[x_w;x_CO;x_H2],[j_x_w;j_x_CO;j_x_H2],[D_H2O_CO2(eps_p_GDL,tau_GDL,s,T);D_CO_CO2(eps_p_GDL,tau_GDL,s,T);D_H2_CO2(eps_p_GDL,tau_GDL,s,T)]);     
         dx_CO = d_x_SM(C,x_CO,j_x_CO,[x_w;x_CO2;x_H2],[j_x_w;j_x_CO2;j_x_H2],[D_H2O_CO(eps_p_GDL,tau_GDL,s,T);D_CO_CO2(eps_p_GDL,tau_GDL,s,T);D_H2_CO(eps_p_GDL,tau_GDL,s,T)]);
@@ -255,17 +260,19 @@ switch subdomain
         dT = -j_T/k_GDL; % heat flux: j_T = -k*grad(T)
         dphi_e = -j_e/sigma_e_GDL; % electron flux: j_e = -sigma_e*grad(phi_e)
         dj_L = S_ec; % conservation of liquid water: div(j_L) = S_L
+        dj_G = -S_ec; % conservation of gas: div(j_L) = S_G
         dj_x_w = -S_ec; % conservation of water vapor: div(j_H2O_g) = S_H2O
         dj_T = S_T; % conservation of heat: div(j_T) = S_T
     case 2 % MICROPOROUS LAYER
-        p_G = P; % [Pa] gas phase absolute pressure (isobaric)
+%         p_G = P; % [Pa] gas phase absolute pressure (isobaric)
         p_C = p_L - p_G; % [Pa] capillary pressure
-        C = P./(R*T); % gas phase density
-        x_sat = P_sat(T,p_C)./P; % saturation water vapor mole fraction
+        C = p_G./(R*T); % gas phase density
+        x_sat = P_sat(T,p_C)./p_G; % saturation water vapor mole fraction
         s = S_PC(p_C,'MPL',theta_MPL); % [-] liquid saturation fraction of pore space
         S_ec = gamma_ec(x_w,x_sat,s,s_im_MPL,T).*C.*(x_w-x_sat); % water evaporation/condensation reaction rate
         S_T = -j_e.*dphi_e + H_ec*S_ec; % Joule heating & evaporation-condensation enthalpy
         dp_L = -j_L./((rho_w/M_w).*kappa_L_eff(kappa_L_MPL,p_C,'MPL',theta_MPL)./mu(T)); % liquid water flux: j_L = -rho_L*(kappa_L/mu_L)*grad(p_L)
+        dp_G = -j_G./(C.*kappa_G_eff(kappa_G_MPL,p_C,'MPL',theta_MPL)./mu_G(T)); % gas phase flux: j_G = -rho_G*(kappa/mu_G)*grad(p_G)
         dx_w = d_x_SM(C,x_w,j_x_w,[x_CO2;x_CO;x_H2],[j_x_CO2;j_x_CO;j_x_H2],[D_H2O_CO2(eps_p_MPL,tau_MPL,s,T);D_H2O_CO(eps_p_MPL,tau_MPL,s,T);D_H2O_H2(eps_p_MPL,tau_MPL,s,T)]);     
         dx_CO2 = d_x_SM(C,x_CO2,j_x_CO2,[x_w;x_CO;x_H2],[j_x_w;j_x_CO;j_x_H2],[D_H2O_CO2(eps_p_MPL,tau_MPL,s,T);D_CO_CO2(eps_p_MPL,tau_MPL,s,T);D_H2_CO2(eps_p_MPL,tau_MPL,s,T)]);     
         dx_CO = d_x_SM(C,x_CO,j_x_CO,[x_w;x_CO2;x_H2],[j_x_w;j_x_CO2;j_x_H2],[D_H2O_CO(eps_p_MPL,tau_MPL,s,T);D_CO_CO2(eps_p_MPL,tau_MPL,s,T);D_H2_CO(eps_p_MPL,tau_MPL,s,T)]);
@@ -276,13 +283,13 @@ switch subdomain
         dj_x_w = -S_ec; % conservation of water vapor: div(j_H2O_g) = S_H2O
         dj_T = S_T; % conservation of heat: div(j_T) = S_T
     case 3 % CATALYST LAYER
-        p_G = P; % [Pa] gas phase absolute pressure (isobaric)
+%         p_G = P; % [Pa] gas phase absolute pressure (isobaric)
         p_C = p_L - p_G; % [Pa] capillary pressure
-        C = P./(R*T); % gas phase density
-        x_sat = P_sat(T,p_C)./P; % saturation water vapor mole fraction
+        C = p_G./(R*T); % gas phase density
+        x_sat = P_sat(T,p_C)./p_G; % saturation water vapor mole fraction
         s = S_PC(p_C,'CL',theta_CL); % [-] liquid saturation fraction of pore space
         S_ec = gamma_ec(x_w,x_sat,s,s_im_CL,T).*C.*(x_w-x_sat); % evaporation/condensation reaction rate
-        C_AQ_CO2 = (P/P_ref)*x_CO2*34; % [mol/m^3] Equilibrium dissolved carbon dioxide concentration at 298.15 K, 1 atm [Henry's law]
+        C_AQ_CO2 = (p_G/P_ref)*x_CO2*34; % [mol/m^3] Equilibrium dissolved carbon dioxide concentration at 298.15 K, 1 atm [Henry's law]
         eta_COER = iff((phi_e-U_0_COER)>0,0,phi_e-U_0_COER); % COER overpotential
         eta_HER = iff((phi_e-U_0_HER)>0,0,phi_e-U_0_HER); % HER overpotential
         i_COER = BV(i_0_COER(T),C_AQ_CO2,C_ref_CO2,gamma_BV_CO2,beta_COER,T,eta_COER); % COER electrochemical reaction rate
@@ -311,6 +318,7 @@ end
 
 % ASSEMBLE DERIVATIVES
 dydx = [dp_L   ; dj_L    ;
+        dp_G   ; dj_G    ;
         dx_w   ; dj_x_w  ;
         dx_CO2 ; dj_x_CO2;
         dx_CO  ; dj_x_CO ;
@@ -321,7 +329,8 @@ end
 
 function y0 = yinit(x, subdomain)
 % POTENTIALS INITIALLY SET TO GAS CHANNEL CONDITIONS
-p_L = p_C_GC + P;
+p_L = p_C_GC + P_GC;
+p_G = P_GC;
 x_w = x_H2O_GC;
 x_CO2 = x_CO2_GC;
 x_CO = x_CO_GC;
@@ -330,7 +339,8 @@ T = T_C;
 phi_e = U(1);
 
 % ALL FLUXES ARE INITIALLY ZERO
-y0 = [p_L   ; 0 ; 
+y0 = [p_L   ; 0 ;
+      p_G   ; 0 ;
       x_w   ; 0 ;
       x_CO2 ; 0 ;
       x_CO  ; 0 ;
@@ -345,12 +355,12 @@ res = ya(:); % homogeneous BC everywhere by default
 
 % LIQUID WATER
 
-res(0*Neq+1) = ya(1,1) - (p_C_GC + P); % GC liquid pressure
+res(0*Neq+1) = ya(1,1) - (p_C_GC + P_GC); % GC liquid pressure
 res(0*Neq+2) = yb(2,1) - ya(2,2); % flux continuity between GDL & MPL  
 res(2*Neq+1) = ya(1,2) - yb(1,1); % potential continuity between GDL & MPL
 res(2*Neq+2) = yb(2,2) - ya(2,3); % flux continuity between MPL & CL 
 res(4*Neq+1) = yb(1,2) - ya(1,3); % potential continuity between MPL & CL
-res(4*Neq+2) = yb(1,3) - (p_C_LC + P); % LC liquid pressure
+res(4*Neq+2) = yb(1,3) - (p_C_LC + P_GC); % LC liquid pressure
 
 % WATER VAPOR
 res(0*Neq+3) = ya(3,1) - x_H2O_GC; % gas channel water vapor content
@@ -359,7 +369,7 @@ res(2*Neq+3) = yb(3,1) - ya(3,2); % potential continuity between GDL & MPL
 res(2*Neq+4) = yb(4,2) - ya(4,3); % flux continuity between MPL & CL
 res(4*Neq+3) = yb(3,2) - ya(3,3); % potential continuity between MPL & CL
 % res(4*Neq+4) = yb(4,3); % zero flux at boundary
-res(4*Neq+4) = yb(3,3) - P_sat_o(T_L)/P; % saturated water vapor at liquid channel
+res(4*Neq+4) = yb(3,3) - P_sat_o(T_L)/P_GC; % saturated water vapor at liquid channel
 
 % CARBON DIOXIDE GAS
 res(0*Neq+5) = ya(5,1) - x_CO2_GC; % gas channel carbon dioxide content
