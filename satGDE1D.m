@@ -70,6 +70,8 @@ mu_G = @(T) 1e-5*exp(-3.63148+542.05./(T-144.15)); % [Pa*s] dynamic viscosity of
 % DIFFUSION COEFFICIENTS (BULK)
 D_ab = @(nu_p_a,nu_p_b,M_a,M_b,P,T) ...
     1e-4*(1e-3*T.^1.75.*(1/M_a+1/M_b)^0.5)./(P/101325*(nu_p_a^0.33+nu_p_b^0.33)^2); %[m^2/s] binary diffusion coefficient
+D_i_SM = @(w_i,W_j,D_ij) ( 1 - w_i ) ./ sum(W_j ./ D_ij,1); % [m^2] bulk diffusion coefficient assuming Stefan-Maxwell mass-averaged diffusivity
+D_i =  @(D_i_b,D_i_K) 1 ./ ( 1 ./ D_i_b + 1 ./ D_i_K ); % [m^2/s] diffusion coefficient from parallel contributions of bulk and Knudsen diffusivities
 nu_p_H2O = 12.7; % [-] diffusion volume of gaseous species
 nu_p_CO2 = 26.9; % [-] diffusion volume of gaseous species
 nu_p_CO = 18.9; % [-] diffusion volume of gaseous species
@@ -223,7 +225,7 @@ function dydx = odefun(x, y, subdomain)
 % READ POTENTIALS & FLUXES
 p_L   = y( 1,:); j_L     = y( 2,:);
 p_G   = y( 3,:); j_G     = y( 4,:);
-x_w   = y( 5,:); j_x_w   = y( 6,:);
+x_H2O = y( 5,:); j_x_H2O = y( 6,:);
 x_CO2 = y( 7,:); j_x_CO2 = y( 8,:);
 x_CO  = y( 9,:); j_x_CO  = y(10,:);
 x_H2  = y(11,:); j_x_H2  = y(12,:);
@@ -234,7 +236,7 @@ phi_e = y(15,:); j_e     = y(16,:);
 z = zeros(size(x));
 dp_L   = z; dj_L     = z;
 dp_G   = z; dj_G     = z;
-dx_w   = z; dj_x_w   = z;
+dx_H2O = z; dj_x_H2O = z;
 dx_CO2 = z; dj_x_CO2 = z;
 dx_CO  = z; dj_x_CO  = z;
 dx_H2  = z; dj_x_H2  = z;
@@ -244,51 +246,47 @@ dphi_e = z; dj_e     = z;
 % COMPUTE DERIVATIVES
 switch subdomain
     case 1 % GAS DIFFUSION LAYER
-%         p_G = P; % [Pa] gas phase absolute pressure (isobaric)
         p_C = p_L - p_G; % [Pa] capillary pressure
         C = p_G./(R*T); % gas phase density
-        x_sat = P_sat(T,p_C)./p_G; % saturation water vapor mole fraction
+        x_H2O_sat = P_sat(T,p_C)./p_G; % saturation water vapor mole fraction
         s = S_PC(p_C,'GDL',theta_GDL); % [-] liquid saturation fraction of pore space
-        S_ec = gamma_ec(x_w,x_sat,s,s_im_GDL,T).*C.*(x_w-x_sat); % water evaporation/condensation reaction rate
+        S_ec = gamma_ec(x_H2O,x_H2O_sat,s,s_im_GDL,T).*C.*(x_H2O-x_H2O_sat); % water evaporation/condensation reaction rate
         S_T = -j_e.*dphi_e + H_ec*S_ec; % Joule heating & evaporation-condensation enthalpy
         dp_L = -j_L./((rho_w/M_w).*kappa_L_eff(kappa_L_GDL,p_C,'GDL',theta_GDL)./mu_L(T)); % liquid water flux: j_L = -rho_L*(kappa_L/mu_L)*grad(p_L)
         dp_G = -j_G./(C.*kappa_G_eff(kappa_G_GDL,p_C,'GDL',theta_GDL)./mu_G(T)); % gas phase flux: j_G = -rho_G*(kappa/mu_G)*grad(p_G)
-        dx_w = d_x_SM(C,x_w,j_x_w,[x_CO2;x_CO;x_H2],[j_x_CO2;j_x_CO;j_x_H2],[D_H2O_CO2(eps_p_GDL,tau_GDL,s,T);D_H2O_CO(eps_p_GDL,tau_GDL,s,T);D_H2O_H2(eps_p_GDL,tau_GDL,s,T)]);     
-        dx_CO2 = d_x_SM(C,x_CO2,j_x_CO2,[x_w;x_CO;x_H2],[j_x_w;j_x_CO;j_x_H2],[D_H2O_CO2(eps_p_GDL,tau_GDL,s,T);D_CO_CO2(eps_p_GDL,tau_GDL,s,T);D_H2_CO2(eps_p_GDL,tau_GDL,s,T)]);     
-        dx_CO = d_x_SM(C,x_CO,j_x_CO,[x_w;x_CO2;x_H2],[j_x_w;j_x_CO2;j_x_H2],[D_H2O_CO(eps_p_GDL,tau_GDL,s,T);D_CO_CO2(eps_p_GDL,tau_GDL,s,T);D_H2_CO(eps_p_GDL,tau_GDL,s,T)]);
-        dx_H2 = d_x_SM(C,x_H2,j_x_H2,[x_w;x_CO2;x_CO],[j_x_w;j_x_CO2;j_x_CO],[D_H2O_H2(eps_p_GDL,tau_GDL,s,T);D_H2_CO2(eps_p_GDL,tau_GDL,s,T);D_H2_CO(eps_p_GDL,tau_GDL,s,T)]);
+        dx_H2O = d_x_SM(C,x_H2O,j_x_H2O,[x_CO2;x_CO;x_H2],[j_x_CO2;j_x_CO;j_x_H2],[D_H2O_CO2(eps_p_GDL,tau_GDL,s,T);D_H2O_CO(eps_p_GDL,tau_GDL,s,T);D_H2O_H2(eps_p_GDL,tau_GDL,s,T)]);     
+        dx_CO2 = d_x_SM(C,x_CO2,j_x_CO2,[x_H2O;x_CO;x_H2],[j_x_H2O;j_x_CO;j_x_H2],[D_H2O_CO2(eps_p_GDL,tau_GDL,s,T);D_CO_CO2(eps_p_GDL,tau_GDL,s,T);D_H2_CO2(eps_p_GDL,tau_GDL,s,T)]);     
+        dx_CO = d_x_SM(C,x_CO,j_x_CO,[x_H2O;x_CO2;x_H2],[j_x_H2O;j_x_CO2;j_x_H2],[D_H2O_CO(eps_p_GDL,tau_GDL,s,T);D_CO_CO2(eps_p_GDL,tau_GDL,s,T);D_H2_CO(eps_p_GDL,tau_GDL,s,T)]);
+        dx_H2 = d_x_SM(C,x_H2,j_x_H2,[x_H2O;x_CO2;x_CO],[j_x_H2O;j_x_CO2;j_x_CO],[D_H2O_H2(eps_p_GDL,tau_GDL,s,T);D_H2_CO2(eps_p_GDL,tau_GDL,s,T);D_H2_CO(eps_p_GDL,tau_GDL,s,T)]);
         dT = -j_T/k_GDL; % heat flux: j_T = -k*grad(T)
         dphi_e = -j_e/sigma_e_GDL; % electron flux: j_e = -sigma_e*grad(phi_e)
         dj_L = S_ec; % conservation of liquid water: div(j_L) = S_L
-        dj_G = -S_ec; % conservation of gas: div(j_L) = S_G
-        dj_x_w = -S_ec; % conservation of water vapor: div(j_H2O_g) = S_H2O
+        dj_x_H2O = -S_ec; % conservation of water vapor: div(j_H2O_g) = S_H2O
         dj_T = S_T; % conservation of heat: div(j_T) = S_T
     case 2 % MICROPOROUS LAYER
-%         p_G = P; % [Pa] gas phase absolute pressure (isobaric)
         p_C = p_L - p_G; % [Pa] capillary pressure
         C = p_G./(R*T); % gas phase density
-        x_sat = P_sat(T,p_C)./p_G; % saturation water vapor mole fraction
+        x_H2O_sat = P_sat(T,p_C)./p_G; % saturation water vapor mole fraction
         s = S_PC(p_C,'MPL',theta_MPL); % [-] liquid saturation fraction of pore space
-        S_ec = gamma_ec(x_w,x_sat,s,s_im_MPL,T).*C.*(x_w-x_sat); % water evaporation/condensation reaction rate
+        S_ec = gamma_ec(x_H2O,x_H2O_sat,s,s_im_MPL,T).*C.*(x_H2O-x_H2O_sat); % water evaporation/condensation reaction rate
         S_T = -j_e.*dphi_e + H_ec*S_ec; % Joule heating & evaporation-condensation enthalpy
         dp_L = -j_L./((rho_w/M_w).*kappa_L_eff(kappa_L_MPL,p_C,'MPL',theta_MPL)./mu(T)); % liquid water flux: j_L = -rho_L*(kappa_L/mu_L)*grad(p_L)
         dp_G = -j_G./(C.*kappa_G_eff(kappa_G_MPL,p_C,'MPL',theta_MPL)./mu_G(T)); % gas phase flux: j_G = -rho_G*(kappa/mu_G)*grad(p_G)
-        dx_w = d_x_SM(C,x_w,j_x_w,[x_CO2;x_CO;x_H2],[j_x_CO2;j_x_CO;j_x_H2],[D_H2O_CO2(eps_p_MPL,tau_MPL,s,T);D_H2O_CO(eps_p_MPL,tau_MPL,s,T);D_H2O_H2(eps_p_MPL,tau_MPL,s,T)]);     
-        dx_CO2 = d_x_SM(C,x_CO2,j_x_CO2,[x_w;x_CO;x_H2],[j_x_w;j_x_CO;j_x_H2],[D_H2O_CO2(eps_p_MPL,tau_MPL,s,T);D_CO_CO2(eps_p_MPL,tau_MPL,s,T);D_H2_CO2(eps_p_MPL,tau_MPL,s,T)]);     
-        dx_CO = d_x_SM(C,x_CO,j_x_CO,[x_w;x_CO2;x_H2],[j_x_w;j_x_CO2;j_x_H2],[D_H2O_CO(eps_p_MPL,tau_MPL,s,T);D_CO_CO2(eps_p_MPL,tau_MPL,s,T);D_H2_CO(eps_p_MPL,tau_MPL,s,T)]);
-        dx_H2 = d_x_SM(C,x_H2,j_x_H2,[x_w;x_CO2;x_CO],[j_x_w;j_x_CO2;j_x_CO],[D_H2O_H2(eps_p_MPL,tau_MPL,s,T);D_H2_CO2(eps_p_MPL,tau_MPL,s,T);D_H2_CO(eps_p_MPL,tau_MPL,s,T)]);
+        dx_H2O = d_x_SM(C,x_H2O,j_x_H2O,[x_CO2;x_CO;x_H2],[j_x_CO2;j_x_CO;j_x_H2],[D_H2O_CO2(eps_p_MPL,tau_MPL,s,T);D_H2O_CO(eps_p_MPL,tau_MPL,s,T);D_H2O_H2(eps_p_MPL,tau_MPL,s,T)]);     
+        dx_CO2 = d_x_SM(C,x_CO2,j_x_CO2,[x_H2O;x_CO;x_H2],[j_x_H2O;j_x_CO;j_x_H2],[D_H2O_CO2(eps_p_MPL,tau_MPL,s,T);D_CO_CO2(eps_p_MPL,tau_MPL,s,T);D_H2_CO2(eps_p_MPL,tau_MPL,s,T)]);     
+        dx_CO = d_x_SM(C,x_CO,j_x_CO,[x_H2O;x_CO2;x_H2],[j_x_H2O;j_x_CO2;j_x_H2],[D_H2O_CO(eps_p_MPL,tau_MPL,s,T);D_CO_CO2(eps_p_MPL,tau_MPL,s,T);D_H2_CO(eps_p_MPL,tau_MPL,s,T)]);
+        dx_H2 = d_x_SM(C,x_H2,j_x_H2,[x_H2O;x_CO2;x_CO],[j_x_H2O;j_x_CO2;j_x_CO],[D_H2O_H2(eps_p_MPL,tau_MPL,s,T);D_H2_CO2(eps_p_MPL,tau_MPL,s,T);D_H2_CO(eps_p_MPL,tau_MPL,s,T)]);
         dT = -j_T/k_MPL; % heat flux: j_T = -k*grad(T)
         dphi_e = -j_e/sigma_e_MPL; % electron flux: j_e = -sigma_e*grad(phi_e)
         dj_L = S_ec; % conservation of liquid water: div(j_L) = S_L
-        dj_x_w = -S_ec; % conservation of water vapor: div(j_H2O_g) = S_H2O
+        dj_x_H2O = -S_ec; % conservation of water vapor: div(j_H2O_g) = S_H2O
         dj_T = S_T; % conservation of heat: div(j_T) = S_T
     case 3 % CATALYST LAYER
-%         p_G = P; % [Pa] gas phase absolute pressure (isobaric)
         p_C = p_L - p_G; % [Pa] capillary pressure
         C = p_G./(R*T); % gas phase density
-        x_sat = P_sat(T,p_C)./p_G; % saturation water vapor mole fraction
+        x_H2O_sat = P_sat(T,p_C)./p_G; % saturation water vapor mole fraction
         s = S_PC(p_C,'CL',theta_CL); % [-] liquid saturation fraction of pore space
-        S_ec = gamma_ec(x_w,x_sat,s,s_im_CL,T).*C.*(x_w-x_sat); % evaporation/condensation reaction rate
+        S_ec = gamma_ec(x_H2O,x_H2O_sat,s,s_im_CL,T).*C.*(x_H2O-x_H2O_sat); % evaporation/condensation reaction rate
         C_AQ_CO2 = (p_G/P_ref)*x_CO2*34; % [mol/m^3] Equilibrium dissolved carbon dioxide concentration at 298.15 K, 1 atm [Henry's law]
         eta_COER = iff((phi_e-U_0_COER)>0,0,phi_e-U_0_COER); % COER overpotential
         eta_HER = iff((phi_e-U_0_HER)>0,0,phi_e-U_0_HER); % HER overpotential
@@ -301,14 +299,14 @@ switch subdomain
         S_T = -j_e.*dphi_e -a_CCL*i_COER.*(eta_COER+Pi_COER(T))-a_CCL*i_HER.*(eta_HER+Pi_HER(T)) + H_ec*S_ec; % Joule+Peltier heating & evaporation-condensation enthalpy
         S_e = -a_CCL*(i_COER+i_HER);
         dp_L = -j_L./((rho_w/M_w).*kappa_L_eff(kappa_L_CL,p_C,'CL',theta_CL)./mu(T)); % liquid water flux: j_L = -rho_L*(kappa_L/mu_L)*grad(p_L)
-        dx_w = d_x_SM(C,x_w,j_x_w,[x_CO2;x_CO;x_H2],[j_x_CO2;j_x_CO;j_x_H2],[D_H2O_CO2(eps_p_CL,tau_CL,s,T);D_H2O_CO(eps_p_CL,tau_CL,s,T);D_H2O_H2(eps_p_CL,tau_CL,s,T)]);     
-        dx_CO2 = d_x_SM(C,x_CO2,j_x_CO2,[x_w;x_CO;x_H2],[j_x_w;j_x_CO;j_x_H2],[D_H2O_CO2(eps_p_CL,tau_CL,s,T);D_CO_CO2(eps_p_CL,tau_CL,s,T);D_H2_CO2(eps_p_CL,tau_CL,s,T)]);     
-        dx_CO = d_x_SM(C,x_CO,j_x_CO,[x_w;x_CO2;x_H2],[j_x_w;j_x_CO2;j_x_H2],[D_H2O_CO(eps_p_CL,tau_CL,s,T);D_CO_CO2(eps_p_CL,tau_CL,s,T);D_H2_CO(eps_p_CL,tau_CL,s,T)]);
-        dx_H2 = d_x_SM(C,x_H2,j_x_H2,[x_w;x_CO2;x_CO],[j_x_w;j_x_CO2;j_x_CO],[D_H2O_H2(eps_p_CL,tau_CL,s,T);D_H2_CO2(eps_p_CL,tau_CL,s,T);D_H2_CO(eps_p_CL,tau_CL,s,T)]);
+        dx_H2O = d_x_SM(C,x_H2O,j_x_H2O,[x_CO2;x_CO;x_H2],[j_x_CO2;j_x_CO;j_x_H2],[D_H2O_CO2(eps_p_CL,tau_CL,s,T);D_H2O_CO(eps_p_CL,tau_CL,s,T);D_H2O_H2(eps_p_CL,tau_CL,s,T)]);     
+        dx_CO2 = d_x_SM(C,x_CO2,j_x_CO2,[x_H2O;x_CO;x_H2],[j_x_H2O;j_x_CO;j_x_H2],[D_H2O_CO2(eps_p_CL,tau_CL,s,T);D_CO_CO2(eps_p_CL,tau_CL,s,T);D_H2_CO2(eps_p_CL,tau_CL,s,T)]);     
+        dx_CO = d_x_SM(C,x_CO,j_x_CO,[x_H2O;x_CO2;x_H2],[j_x_H2O;j_x_CO2;j_x_H2],[D_H2O_CO(eps_p_CL,tau_CL,s,T);D_CO_CO2(eps_p_CL,tau_CL,s,T);D_H2_CO(eps_p_CL,tau_CL,s,T)]);
+        dx_H2 = d_x_SM(C,x_H2,j_x_H2,[x_H2O;x_CO2;x_CO],[j_x_H2O;j_x_CO2;j_x_CO],[D_H2O_H2(eps_p_CL,tau_CL,s,T);D_H2_CO2(eps_p_CL,tau_CL,s,T);D_H2_CO(eps_p_CL,tau_CL,s,T)]);
         dT = -j_T/k_CL; % heat flux: j_T = -k*grad(T)
         dphi_e = -j_e/sigma_e_CL; % electron flux: j_e = -sigma_e*grad(phi_e)
         dj_L = S_ec + S_H2O; % conservation of liquid water: div(j_L) = S_L
-        dj_x_w = -S_ec; % conservation of water vapor: div(j_H2O_v) = S_H2O
+        dj_x_H2O = -S_ec; % conservation of water vapor: div(j_H2O_v) = S_H2O
         dj_x_CO2 = S_CO2; % conservation of carbon dioxide gas: div(j_CO2) = S_CO2
         dj_x_CO = S_CO; % conservation of carbon monoxide gas: div(j_CO) = S_CO
         dj_x_H2 = S_H2; % conservation of hydrogen gas: div(j_CO) = S_CO
@@ -319,7 +317,7 @@ end
 % ASSEMBLE DERIVATIVES
 dydx = [dp_L   ; dj_L    ;
         dp_G   ; dj_G    ;
-        dx_w   ; dj_x_w  ;
+        dx_H2O   ; dj_x_H2O  ;
         dx_CO2 ; dj_x_CO2;
         dx_CO  ; dj_x_CO ;
         dx_H2  ; dj_x_H2 ;
@@ -331,7 +329,7 @@ function y0 = yinit(x, subdomain)
 % POTENTIALS INITIALLY SET TO GAS CHANNEL CONDITIONS
 p_L = p_C_GC + P_GC;
 p_G = P_GC;
-x_w = x_H2O_GC;
+x_H2O = x_H2O_GC;
 x_CO2 = x_CO2_GC;
 x_CO = x_CO_GC;
 x_H2 = x_H2_GC;
@@ -341,7 +339,7 @@ phi_e = U(1);
 % ALL FLUXES ARE INITIALLY ZERO
 y0 = [p_L   ; 0 ;
       p_G   ; 0 ;
-      x_w   ; 0 ;
+      x_H2O ; 0 ;
       x_CO2 ; 0 ;
       x_CO  ; 0 ;
       x_H2  ; 0 ;      
@@ -425,6 +423,22 @@ function d_x_i = d_x_SM(C_T,x_i,N_i,X_j,N_j,D_ij)
     for j = 1:size(X_j,1)
         d_x_i = d_x_i + (x_i .* N_j(j,:) - X_j(j,:) .* N_i) ./ (C_T .* D_ij(j,:));
     end
+end
+
+function M = M_G(W_j,M_j) 
+    % Compute mass-averaged molar mass of the gaseous mixture
+    % m  : number of domain position elements [-] (1-D domain vector length)
+    % W_j: matrix of mass fractions for components j over x-domain, (count(j) x m)
+    % M_j: column vector of molar mass of component j, (count(j) x 1)
+    M = 1 ./ sum( W_j./M_j , 1 );
+end
+
+function dM = dM_G(W_j,M_j,dW_j) 
+    % Compute mass-averaged 1-D gradient of molar mass of the gaseous mixture
+    % m  : number of domain position elements [-] (1-D domain vector length)
+    % W_j: matrix of mass fractions for components j over x-domain, (count(j) x m)
+    % M_j: column vector of molar mass of component j, (count(j) x 1)
+    dM = -( sum( W_j./M_j , 1 ) ).^(-2) .* sum( dW_j./M_j , 1 );
 end
 
 end
