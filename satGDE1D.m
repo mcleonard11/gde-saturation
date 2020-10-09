@@ -164,7 +164,7 @@ unit_scale = [1e-3 1 1 1 1 1 1;
               1 1 1 1 1 1 0.1];
 quantity = {'{\itp}_L [kPa]','{\itx}_{H_2O}','{\itx}_{CO_2}','{\itx}_{CO}','{\itx}_{H_2}','{\itT}','{\it\phi}_e [V]';
             '{\itj}_L','{\itj}_{H2O}','{\itj}_{CO_2}','{\itj}_{CO}','{\itj}_{H_2}','{\itj}_{T}','{\itj}_e [mA/cm^2]'};
-c = winter(Np);
+c = jet(Np);
 for m = 1:2
     figure('Name', fig_names{m})
     for n = 1:Neq
@@ -208,9 +208,10 @@ figure('Name','Saturation')
 box on
 hold on
 for k = 1:Np
-    [~,ind] = min(abs(SOL{k}.x(1,:)-Lsum(2)));
-    plot([SOL{k}.x(1,1:ind),SOL{k}.x(1,ind+1:end)]*1e6,...
-        [S_PC(SOL{k}.y(1,1:ind)-P,'GDL',theta_GDL),S_PC(SOL{k}.y(1,ind+1:end)-P,'MPL',theta_MPL)],'Color', c(k,:));
+    [~,ind1] = min(abs(SOL{k}.x(1,:)-Lsum(2)));
+    [~,ind2] = min(abs(SOL{k}.x(1,:)-Lsum(3)));
+    plot([SOL{k}.x(1,1:ind1),SOL{k}.x(1,ind1+1:ind2),SOL{k}.x(1,ind2+1:end)]*1e6,...
+        [S_PC(SOL{k}.y(1,1:ind1)-P,'GDL',theta_GDL),S_PC(SOL{k}.y(1,ind1+1:ind2)-P,'MPL',theta_MPL),S_PC(SOL{k}.y(1,ind2+1:end)-P,'CL',theta_CL)],'Color', c(k,:));
 end
 xlabel('{\itx} [μm]')
 ylabel('Saturation (-)')
